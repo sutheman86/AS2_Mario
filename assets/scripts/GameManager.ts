@@ -1,0 +1,682 @@
+// Learn TypeScript:
+//  - https://docs.cocos.com/creator/manual/en/scripting/typescript.html
+// Learn Attribute:
+//  - https://docs.cocos.com/creator/manual/en/scripting/reference/attributes.html
+// Learn life-cycle callbacks:
+//  - https://docs.cocos.com/creator/manual/en/scripting/life-cycle-callbacks.html
+
+const {ccclass, property} = cc._decorator;
+
+@ccclass
+export default class GameManager extends cc.Component {
+
+    // LIFE-CYCLE CALLBACKS:
+    @property
+    gravity: number = -960;
+
+    @property(cc.Prefab)
+    playerPrefab: cc.Prefab | null = null;
+
+    @property(cc.Prefab)
+    enemyPrefab: cc.Prefab | null = null;
+
+    @property(cc.TiledMap)
+    tileMap0: cc.TiledMap | null = null;
+
+    @property(cc.Node)
+    worldNode: cc.Node | null = null;
+
+    @property
+    playerMaxLives: number = 3;
+
+    @property(cc.Prefab)
+    questionBlockPrefab: cc.Prefab | null = null;
+
+    @property(cc.Prefab)
+    mushroomPrefab: cc.Prefab | null = null;
+
+    private playerInstance: cc.Node | null = null;
+    private isPlayerGrowup: boolean = false;
+    private enemyInstances: cc.Node[] = [];
+    private questionBlockInstances: cc.Node[] = [];
+    private mushroomInstances: cc.Node[] = [];
+    private playerLives: number = 0;
+    private mapWidth: number = 0;
+    private terrainLayerNames: string[] = 
+    ["Ground", "Terrain1", "Terrain2", "Terrain3"];
+    private objectLayerNames: string[] = ["Object Layer"];
+    private terrainColliders: {[layerName: string]: cc.PhysicsCollider[]} = {};
+    private pendingPlayerRespawn: boolean = false;
+    private finishFlag: cc.Node | null = null;
+    private isPlayerInvincible: boolean = false;
+
+    loadEnemy() {
+        if(!this.enemyPrefab) {
+            cc.error("Enemy prefab not set in GameManager");
+            return;
+        }
+        cc.log("Instantiating enemy");
+
+        const enemyInstance = cc.instantiate(this.enemyPrefab);
+        enemyInstance.getComponent(cc.PhysicsBoxCollider).tag = 7;
+        const enemyParent = this.worldNode || this.node;
+        enemyParent.addChild(enemyInstance);
+        enemyInstance.setPosition(800, 200, 0);
+        let enemyControl: any = enemyInstance.getComponent("EnemyControl");
+
+        if (!enemyControl) {
+            cc.error("Enemy prefab does not have EnemyControl component");
+            return;
+        }
+
+        enemyControl.setGameManager(this);
+        this.enemyInstances.push(enemyInstance);
+    }
+
+    loadTiledMap() {
+        if(!this.tileMap0) {
+            cc.error("Tilemap not set in GameManager");
+            return;
+        }
+
+        const mapSize = this.tileMap0.getMapSize();
+        const tileSize = this.tileMap0.getTileSize();
+        this.mapWidth = mapSize.width * tileSize.width * 2;
+
+        this.terrainColliders = {};
+        this.loadTerrainLayers();
+        this.loadObjectLayers();
+    }
+
+    loadTerrainLayers() {
+        if(!this.tileMap0) {
+            cc.error("Tilemap not set in GameManager");
+            return;
+        }
+        for (const layerName of this.terrainLayerNames) {
+            const group = this.tileMap0.getObjectGroup(layerName);
+
+            if (!group) {
+                cc.warn(`Terrain layer '${layerName}' not found in tilemap`);
+                continue;
+            }
+
+            this.terrainColliders[layerName] = [];
+
+            for (const obj of group.getObjects()) {
+                const collider = this.createTerrainCollider(layerName, obj);
+                if (layerName === "Ground" && collider) {
+                    collider.tag = 1;
+                    cc.log(`Tagged collider for ${layerName} as Ground`);
+                }
+
+                if (collider) {
+                    this.terrainColliders[layerName].push(collider);
+                    cc.log(`Collider created for ${layerName}: ${obj.name || obj.id}`);
+                }
+            }
+        }
+    }
+
+    loadObjectLayers() {
+        if(!this.tileMap0) {
+            cc.error("Tilemap not set in GameManager");
+            return;
+        }
+        for (const layerName of this.objectLayerNames) {
+            const group = this.tileMap0.getObjectGroup(layerName);
+
+            if (!group) {
+                cc.warn(`Object layer '${layerName}' not found in tilemap`);
+                continue;
+            }
+
+            for (const obj of group.getObjects()) {
+                this.loadMapObject(layerName, obj);
+            }
+        }
+        if(!this.finishFlag) {
+            cc.error("Finish flag not found in tilemap");
+        }
+    }
+
+    loadMapObject(layerName: string, obj: any) {
+        this.debugTiledObject(layerName, obj);
+        if(!obj.kind) {
+            cc.warn(`Object ${obj.name || obj.id} has no kind`);
+            return;
+        }
+
+        if (obj.kind === "block") {
+            cc.log(`Found block object: ${obj.name || obj.id}`);
+            const blockNode = cc.instantiate(this.questionBlockPrefab!);
+            blockNode.setParent(this.tileMap0!.node);
+            blockNode.setPosition(
+                obj.x + obj.width / 2,
+                obj.y - obj.height / 2,
+                0
+            );
+
+            this.questionBlockInstances.push(blockNode);
+            return;
+        }
+
+        if (obj.kind === "finish") {
+            cc.log(`Found finish object: ${obj.name || obj.id}`);
+            this.finishFlag = new cc.Node("FinishFlag");
+            this.finishFlag.setParent(this.tileMap0!.node);
+            this.finishFlag.setPosition(
+                obj.x + obj.width / 2,
+                obj.y - obj.height / 2,
+                0
+            );
+            const rb = this.finishFlag.addComponent(cc.RigidBody);
+            rb.enabledContactListener = true;
+            rb.type = cc.RigidBodyType.Static;
+
+            const collider = this.finishFlag.addComponent(cc.PhysicsBoxCollider);
+            collider.size = new cc.Size(obj.width, obj.height);
+            collider.sensor = true;
+            collider.tag = 99; // finish flag
+            collider.apply();
+
+            cc.log(`Created finish flag collider at (${this.finishFlag.x}, ${this.finishFlag.y})`);
+
+            return;
+        }
+
+        cc.warn(`Unhandled map object type '${obj.kind}' on ${layerName}: ${obj.name || obj.id}`);
+    }
+
+    debugTiledObject(layerName: string, obj: any) {
+        const fields: string[] = [];
+
+        for (const key in obj) {
+            const value = obj[key];
+
+            if (value === null || value === undefined) {
+                fields.push(`${key}=${value}`);
+            } else if (typeof value === "object") {
+                fields.push(`${key}={${Object.keys(value).join(",")}}`);
+            } else {
+                fields.push(`${key}=${value}`);
+            }
+        }
+
+        cc.log(`[${layerName}] object ${obj.name || obj.id}: ${fields.join("; ")}`);
+    }
+
+    createTerrainCollider(layerName: string, obj: any): cc.PhysicsCollider | null {
+        if(!this.tileMap0) {
+            cc.error("Tilemap not set in GameManager");
+            return null;
+        }
+
+        const colliderNode = new cc.Node(`${layerName}_Collider_${obj.name || obj.id}`);
+        colliderNode.setParent(this.tileMap0.node);
+        colliderNode["terrainLayerName"] = layerName;
+        colliderNode["isLayeredTerrain"] = layerName !== "Ground" && this.terrainLayerNames.indexOf(layerName) >= 0;
+
+        const body = colliderNode.addComponent(cc.RigidBody);
+        body.type = cc.RigidBodyType.Static;
+
+        const points = obj.points || obj.polygonPoints;
+
+        if (points && points.length) {
+            const collider = colliderNode.addComponent(cc.PhysicsPolygonCollider);
+            colliderNode.setPosition(obj.x, obj.y, 0);
+            collider.points = points.map((point: any) => cc.v2(point.x, point.y));
+            collider.friction = 0.3;
+            collider.apply();
+            collider["terrainPoints"] = collider.points.map((point: cc.Vec2) => {
+                return cc.v2(colliderNode.x + point.x, colliderNode.y + point.y);
+            });
+            return collider;
+        }
+
+        if (!obj.width || !obj.height) {
+            cc.warn(`Skipping object ${obj.name || obj.id}: missing width/height`);
+            colliderNode.destroy();
+            return null;
+        }
+
+        const collider = colliderNode.addComponent(cc.PhysicsBoxCollider);
+        collider.size = new cc.Size(obj.width, obj.height);
+        colliderNode.setPosition(
+            obj.x + obj.width / 2,
+            obj.y - obj.height / 2,
+            0
+        );
+        collider.apply();
+        collider["terrainLeft"] = obj.x;
+        collider["terrainRight"] = obj.x + obj.width;
+        collider["terrainTop"] = obj.y;
+        cc.log(`Created collider for ${layerName} at (${colliderNode.x}, ${colliderNode.y}) terrainTop: ${collider["terrainTop"]}`);
+        return collider;
+    }
+
+    shouldAllowPlayerTerrainContact(playerCollider: cc.PhysicsCollider, terrainCollider: cc.PhysicsCollider): boolean {
+        if (!this.tileMap0 || !playerCollider || !terrainCollider) {
+            return true;
+        }
+
+        if(terrainCollider.tag === 1) { 
+            cc.log("PlayerControl: Contact with Ground layer, allowing contact");
+            return true; 
+        }
+
+
+        const playerAabb = (playerCollider as any).getAABB();
+        const playerBottomLeftMap = this.tileMap0.node.convertToNodeSpaceAR(cc.v2(playerAabb.xMin, playerAabb.yMin));
+        const playerBottomRightMap = this.tileMap0.node.convertToNodeSpaceAR(cc.v2(playerAabb.xMax, playerAabb.yMin));
+        const playerLeftMapX = Math.min(playerBottomLeftMap.x, playerBottomRightMap.x);
+        const playerRightMapX = Math.max(playerBottomLeftMap.x, playerBottomRightMap.x);
+        const playerBottomMapY = Math.min(playerBottomLeftMap.y, playerBottomRightMap.y);
+        const surfaceY = this.getColliderSurfaceYInXRange(terrainCollider, playerLeftMapX, playerRightMapX);
+
+        if (surfaceY === null) {
+            return false;
+        }
+
+        const targetSurfaceY = this.getHighestReachableTerrainSurfaceYInXRange(
+            playerLeftMapX,
+            playerRightMapX,
+            playerBottomMapY
+        );
+
+        if (targetSurfaceY === null) {
+            return false;
+        }
+
+        return Math.abs(surfaceY - targetSurfaceY) <= 8;
+    }
+
+    getHighestReachableTerrainSurfaceYInXRange(playerLeftMapX: number, playerRightMapX: number, playerBottomMapY: number): number | null {
+        let highestSurfaceY: number | null = null;
+        const tolerance = 4;
+
+        for (const layerName of this.terrainLayerNames) {
+            for (const collider of this.terrainColliders[layerName] || []) {
+                const surfaceY = this.getColliderSurfaceYInXRange(collider, playerLeftMapX, playerRightMapX);
+
+                if (surfaceY === null || playerBottomMapY < surfaceY - tolerance) {
+                    continue;
+                }
+
+                if (highestSurfaceY === null || surfaceY > highestSurfaceY) {
+                    highestSurfaceY = surfaceY;
+                }
+            }
+        }
+
+        return highestSurfaceY;
+    }
+
+    getHighestReachableTerrainSurfaceY(playerMapX: number, playerBottomMapY: number): number | null {
+        let highestSurfaceY: number | null = null;
+        const tolerance = 4;
+
+        for (const layerName of this.terrainLayerNames) {
+            for (const collider of this.terrainColliders[layerName] || []) {
+                const surfaceY = this.getColliderSurfaceYAtX(collider, playerMapX);
+
+                if (surfaceY === null || playerBottomMapY < surfaceY - tolerance) {
+                    continue;
+                }
+
+                if (highestSurfaceY === null || surfaceY > highestSurfaceY) {
+                    highestSurfaceY = surfaceY;
+                }
+            }
+        }
+
+        return highestSurfaceY;
+    }
+
+    getColliderSurfaceYAtX(collider: cc.PhysicsCollider, playerMapX: number): number | null {
+        const points = collider["terrainPoints"] as cc.Vec2[];
+
+        if (points && points.length >= 2) {
+            return this.getPolygonSurfaceYAtX(points, playerMapX);
+        }
+
+        const left = collider["terrainLeft"];
+        const right = collider["terrainRight"];
+
+        if (left === undefined || right === undefined || playerMapX < left || playerMapX > right) {
+            return null;
+        }
+
+        return collider["terrainTop"];
+    }
+
+    getColliderSurfaceYInXRange(collider: cc.PhysicsCollider, playerLeftMapX: number, playerRightMapX: number): number | null {
+        const points = collider["terrainPoints"] as cc.Vec2[];
+        const leftX = Math.min(playerLeftMapX, playerRightMapX);
+        const rightX = Math.max(playerLeftMapX, playerRightMapX);
+
+        if (points && points.length >= 2) {
+            return this.getPolygonSurfaceYInXRange(points, leftX, rightX);
+        }
+
+        const terrainLeft = collider["terrainLeft"];
+        const terrainRight = collider["terrainRight"];
+
+        if (terrainLeft === undefined || terrainRight === undefined || rightX < terrainLeft || leftX > terrainRight) {
+            return null;
+        }
+
+        return collider["terrainTop"];
+    }
+
+    getPolygonSurfaceYAtX(points: cc.Vec2[], playerMapX: number): number | null {
+        let surfaceY: number | null = null;
+
+        for (let i = 0; i < points.length; i++) {
+            const a = points[i];
+            const b = points[(i + 1) % points.length];
+            const minX = Math.min(a.x, b.x);
+            const maxX = Math.max(a.x, b.x);
+
+            if (playerMapX < minX || playerMapX > maxX || a.x === b.x) {
+                continue;
+            }
+
+            const t = (playerMapX - a.x) / (b.x - a.x);
+            const y = a.y + (b.y - a.y) * t;
+
+            if (surfaceY === null || y > surfaceY) {
+                surfaceY = y;
+            }
+        }
+
+        return surfaceY;
+    }
+
+    getPolygonSurfaceYInXRange(points: cc.Vec2[], playerLeftMapX: number, playerRightMapX: number): number | null {
+        let surfaceY: number | null = null;
+
+        for (let i = 0; i < points.length; i++) {
+            const a = points[i];
+            const b = points[(i + 1) % points.length];
+
+            if (a.x === b.x) {
+                continue;
+            }
+
+            const segmentLeftX = Math.min(a.x, b.x);
+            const segmentRightX = Math.max(a.x, b.x);
+            const overlapLeftX = Math.max(playerLeftMapX, segmentLeftX);
+            const overlapRightX = Math.min(playerRightMapX, segmentRightX);
+
+            if (overlapLeftX > overlapRightX) {
+                continue;
+            }
+
+            const leftT = (overlapLeftX - a.x) / (b.x - a.x);
+            const rightT = (overlapRightX - a.x) / (b.x - a.x);
+            const leftY = a.y + (b.y - a.y) * leftT;
+            const rightY = a.y + (b.y - a.y) * rightT;
+            const segmentSurfaceY = Math.max(leftY, rightY);
+
+            if (surfaceY === null || segmentSurfaceY > surfaceY) {
+                surfaceY = segmentSurfaceY;
+            }
+        }
+
+        return surfaceY;
+    }
+
+    getGroundSurfaceYAtWorldX(worldX: number): number | null {
+        if (!this.tileMap0) {
+            return null;
+        }
+
+        const mapPoint = this.tileMap0.node.convertToNodeSpaceAR(cc.v2(worldX, 0));
+        let highestSurfaceY: number | null = null;
+
+        for (const collider of this.terrainColliders["Ground"] || []) {
+            const surfaceY = this.getColliderSurfaceYAtX(collider, mapPoint.x);
+
+            if (surfaceY === null) {
+                continue;
+            }
+
+            if (highestSurfaceY === null || surfaceY > highestSurfaceY) {
+                highestSurfaceY = surfaceY;
+            }
+        }
+
+        if (highestSurfaceY === null) {
+            return null;
+        }
+
+        return this.tileMap0.node.convertToWorldSpaceAR(cc.v2(mapPoint.x, highestSurfaceY)).y;
+    }
+
+    loadPlayer() {
+
+        if(!this.playerPrefab) {
+            cc.error("Player prefab not set in GameManager");
+            return;
+        }
+        cc.log("Instantiating player");
+
+        this.playerInstance = cc.instantiate(this.playerPrefab);
+        const playerParent = this.worldNode || this.node;
+        playerParent.addChild(this.playerInstance);
+        this.playerInstance.setPosition(100, 200, 0);
+        let playerControl: any = this.playerInstance.getComponent("PlayerControl");
+
+        if (!playerControl) {
+            cc.error("Player prefab does not have PlayerControl component");
+            return;
+        }
+
+        playerControl.setGameManager(this);
+
+        // NOTE: Setup player camera
+        const mainCamera = cc.Camera.main;
+        if(!mainCamera) {
+            cc.error("Main camera not found in scene");
+            return;
+        }
+
+        const playerCamera = mainCamera.getComponent("PlayerCamera");
+        if (!playerCamera) {
+            cc.error("Main camera does not have PlayerCamera component");
+            return;
+        }
+        this.setCameraBounds(playerCamera);
+        playerCamera.setTarget(this.playerInstance);
+
+        const playerCollider = this.playerInstance.getComponent(cc.PhysicsCollider);
+        if (playerCollider) {
+            playerCollider.enabledContactListener = true;
+            playerCollider.tag = 11;
+        } else {
+            cc.error("PlayerControl onLoad: missing PhysicsCollider");
+        }
+
+    }
+
+    setCameraBounds(playerCamera: any) {
+        if (!this.tileMap0) {
+            return;
+        }
+
+        const mapSize = this.tileMap0.getMapSize();
+        const tileSize = this.tileMap0.getTileSize();
+        const mapWidth = mapSize.width * tileSize.width;
+        const mapHeight = mapSize.height * tileSize.height;
+        const bottomLeft = this.tileMap0.node.convertToWorldSpaceAR(cc.v2(0, 0));
+        const topRight = this.tileMap0.node.convertToWorldSpaceAR(cc.v2(mapWidth, mapHeight));
+
+        playerCamera.setWorldBounds(
+            bottomLeft.x,
+            topRight.x,
+            bottomLeft.y,
+            topRight.y
+        );
+    }
+
+    onLoad () {
+        cc.PhysicsManager.FIXED_TIME_STEP = 1 / 60;
+        cc.PhysicsManager.MAX_ACCUMULATOR = 1 / 5;
+
+        const physics = cc.director.getPhysicsManager();
+        physics.enabled = true;
+        physics.enabledAccumulator = true;
+        physics.gravity = cc.v2(0, this.gravity);
+        cc.director.getCollisionManager().enabled = true;
+    }
+
+    start () {
+        this.loadTiledMap();
+        this.loadPlayer();
+        this.loadEnemy();
+        this.playerLives = this.playerMaxLives;
+    }
+
+
+    playerOutOfBounds() {
+        return this.playerInstance ? 
+            (this.playerInstance.y < 0 || this.playerInstance.x < 0 
+                || this.playerInstance.x > this.mapWidth) : false;
+    }
+
+    update (dt: number) {
+        if(!this.playerInstance) {
+            return;
+        }
+
+        if (this.pendingPlayerRespawn) {
+            this.pendingPlayerRespawn = false;
+            this.respawnPlayer();
+        }
+
+        if(this.playerOutOfBounds()) {
+            cc.log("Player fell off the map, resetting position");
+            this.queuePlayerRespawn();
+            this.playerLives--;
+            cc.log(`Player lives remaining: ${this.playerLives}`);
+        }
+
+        if(this.isPlayerGrowup) {
+            this.playerInstance.setScale(3);
+        }
+        else {
+            this.playerInstance.setScale(2);
+        }
+
+    }
+
+    killPlayer() {
+        if(this.isPlayerInvincible) {
+            cc.log("Player is invincible, ignoring damage");
+            return;
+        }
+
+        if (!this.playerInstance) {
+            return;
+        }
+
+        if(this.isPlayerGrowup) {  
+            this.isPlayerGrowup = false;
+            cc.log("Player hit while growup, shrinking back down and granting temporary invincibility");
+            this.isPlayerInvincible = true;
+            this.scheduleOnce(() => {
+                this.isPlayerInvincible = false;
+            }, 1.0);
+            return;
+        }
+
+        if(this.playerLives > 0) {
+            this.queuePlayerRespawn();
+            this.playerLives--;
+        } else {
+            cc.log("Player has no lives remaining, game over!");
+        }
+    }
+
+    queuePlayerRespawn() {
+        this.pendingPlayerRespawn = true;
+    }
+
+    respawnPlayer() {
+        if (!this.playerInstance) {
+            return;
+        }
+        const rb = this.playerInstance.getComponent(cc.RigidBody);
+
+        if (rb) {
+            rb.linearVelocity = cc.v2(0, 0);
+            rb.angularVelocity = 0;
+        }
+
+        this.playerInstance.setPosition(100, 200, 0);
+        this.playerInstance.setScale(1);
+        this.isPlayerGrowup = false;
+        this.isPlayerInvincible = false;
+        this.playerInstance.getComponent("PlayerControl").reset();
+    }
+
+    questionBlockHit(blockNode: cc.Node) {
+        cc.log(`Question block hit: ${blockNode.name}`);
+        const index = this.questionBlockInstances.indexOf(blockNode);
+        if (index >= 0) {
+            this.questionBlockInstances.splice(index, 1);
+            this.spawnMushroomFromBlock(blockNode);
+            blockNode.destroy();
+        } else {
+            cc.warn("Hit question block that is not tracked in GameManager");
+        }
+    }
+
+    spawnMushroomFromBlock(blockNode: cc.Node) {
+        if (!this.mushroomPrefab) {
+            cc.error("Mushroom prefab not set in GameManager");
+            return;
+        }
+
+        const mushroom = cc.instantiate(this.mushroomPrefab);
+        const parent = blockNode.parent || this.worldNode || this.node;
+        parent.addChild(mushroom);
+
+        const blockCollider = blockNode.getComponent(cc.PhysicsBoxCollider);
+        const mushroomCollider = mushroom.getComponent(cc.PhysicsBoxCollider);
+        const blockHalfHeight = blockCollider ? blockCollider.size.height / 2 : blockNode.height / 2;
+        const mushroomHalfHeight = mushroomCollider ? mushroomCollider.size.height / 2 : mushroom.height / 2;
+
+        mushroom.getComponent("MushroomControl").setGameManager(this);
+
+        mushroom.setPosition(
+            blockNode.x,
+            blockNode.y + blockHalfHeight + mushroomHalfHeight + 2,
+            0
+        );
+
+        const rb = mushroom.getComponent(cc.RigidBody);
+        if (rb) {
+            rb.enabledContactListener = true;
+            rb.linearVelocity = cc.v2(0, 0);
+        } else {
+            cc.error("Mushroom prefab is missing RigidBody");
+        }
+
+        if (mushroomCollider) {
+            mushroomCollider.tag = 8;
+            mushroomCollider.sensor = false;
+            mushroomCollider.apply();
+        } else {
+            cc.error("Mushroom prefab is missing PhysicsBoxCollider");
+        }
+
+        this.mushroomInstances.push(mushroom);
+        cc.log(`Spawned mushroom at (${mushroom.x}, ${mushroom.y})`);
+    }
+
+    playerGrowUp() {
+        this.isPlayerGrowup = true;
+    }
+}
