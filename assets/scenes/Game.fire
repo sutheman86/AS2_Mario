@@ -81,10 +81,10 @@
     "_active": true,
     "_components": [
       {
-        "__id__": 53
+        "__id__": 54
       },
       {
-        "__id__": 54
+        "__id__": 55
       }
     ],
     "_prefab": null,
@@ -147,6 +147,9 @@
     "_components": [
       {
         "__id__": 4
+      },
+      {
+        "__id__": 53
       }
     ],
     "_prefab": null,
@@ -229,6 +232,9 @@
       "__id__": 25
     },
     "maxGameTimeSeconds": 999,
+    "finishFlagPrefab": {
+      "__uuid__": "dc5aee10-cd6f-4a9a-acf6-9ffca050b5e0"
+    },
     "_id": "24NykZSqhJGLx6qgXD7byv"
   },
   {
@@ -2153,6 +2159,17 @@
       "__id__": 35
     },
     "_id": "f0kEMGpSJDhZfek78G2GW/"
+  },
+  {
+    "__type__": "61d6a0pWv9KsYBcEq5xrp8m",
+    "_name": "",
+    "_objFlags": 0,
+    "node": {
+      "__id__": 3
+    },
+    "_enabled": true,
+    "drawAabb": true,
+    "_id": "93Vu6NIJdFvroqq3dS93Bs"
   },
   {
     "__type__": "cc.Canvas",

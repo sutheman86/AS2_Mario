@@ -42,20 +42,19 @@ export default class GameManager extends cc.Component {
     @property
     maxGameTimeSeconds: number = 999;
 
-    private playerInstance: cc.Node | null = null;
-    private isPlayerGrowup: boolean = false;
+    @property(cc.Prefab)
+    finishFlagPrefab: cc.Prefab | null = null;
+
+    private playerControl: any = null;
     private enemyInstances: cc.Node[] = [];
     private questionBlockInstances: cc.Node[] = [];
     private mushroomInstances: cc.Node[] = [];
-    private playerLives: number = 0;
     private mapWidth: number = 0;
     private terrainLayerNames: string[] =
         ["Ground", "Terrain1", "Terrain2", "Terrain3"];
     private objectLayerNames: string[] = ["Object Layer"];
     private terrainColliders: { [layerName: string]: cc.PhysicsCollider[] } = {};
-    private pendingPlayerRespawn: boolean = false;
     private finishFlag: cc.Node | null = null;
-    private isPlayerInvincible: boolean = false;
     private remainingTime: number = 0;
     private playerScore: number = 0;
 
@@ -69,46 +68,19 @@ export default class GameManager extends cc.Component {
         physics.enabledAccumulator = true;
         physics.gravity = cc.v2(0, this.gravity);
         cc.director.getCollisionManager().enabled = true;
+        cc.log(this.tileMap0?.getProperties());
     }
 
     start () {
         this.loadTiledMap();
         this.loadPlayer();
         this.loadEnemy();
-        this.playerLives = this.playerMaxLives;
 
-        this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateLives(this.playerLives);
         this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateScore(0);
         this.remainingTime = this.maxGameTimeSeconds;
         this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateTime(this.remainingTime);
         this.playerScore = 0;
         this.schedule(this.timerCountdown, 1);
-    }
-
-    update (dt: number) {
-        if(!this.playerInstance) {
-            return;
-        }
-
-        if (this.pendingPlayerRespawn) {
-            this.pendingPlayerRespawn = false;
-            this.respawnPlayer();
-        }
-
-        if(this.isPlayerOutOfBounds()) {
-            cc.log("Player fell off the map, resetting position");
-            this.killPlayer();
-            this.queuePlayerRespawn();
-            cc.log(`Player lives remaining: ${this.playerLives}`);
-        }
-
-        if(this.isPlayerGrowup) {
-            this.playerInstance.setScale(3);
-        }
-        else {
-            this.playerInstance.setScale(2);
-        }
-
     }
 
     // NOTE: load / initalize data
@@ -137,7 +109,7 @@ export default class GameManager extends cc.Component {
 
     loadTiledMap() {
         if(!this.tileMap0) {
-            cc.error("Tilemap not set in GameManager");
+            throw new Error("Tilemap not set in GameManager");
             return;
         }
 
@@ -148,6 +120,18 @@ export default class GameManager extends cc.Component {
         this.terrainColliders = {};
         this.loadTerrainLayers();
         this.loadObjectLayers();
+
+        this.finishFlag = cc.instantiate(this.finishFlagPrefab!);
+        this.finishFlag.setParent(this.tileMap0.node);
+        const mapProps = this.tileMap0.getProperties();
+        if(typeof mapProps.finishX !== "number" || typeof mapProps.finishY !== "number") {
+            cc.error("Invalid finish flag position in tilemap properties");
+        } else {
+            const flagX = mapProps.finishX * tileSize.width - tileSize.width / 2;
+            const flagY = mapProps.finishY * tileSize.height - tileSize.height;
+            cc.log(`Finish flag position from tilemap properties: (${flagX}, ${flagY})`);
+            this.finishFlag.setPosition(flagX, flagY, 0);
+        }
     }
 
     loadTerrainLayers() {
@@ -197,9 +181,6 @@ export default class GameManager extends cc.Component {
                 this.loadMapObject(layerName, obj);
             }
         }
-        if(!this.finishFlag) {
-            cc.error("Finish flag not found in tilemap");
-        }
     }
 
     loadMapObject(layerName: string, obj: any) {
@@ -220,30 +201,6 @@ export default class GameManager extends cc.Component {
             );
 
             this.questionBlockInstances.push(blockNode);
-            return;
-        }
-
-        if (obj.kind === "finish") {
-            cc.log(`Found finish object: ${obj.name || obj.id}`);
-            this.finishFlag = new cc.Node("FinishFlag");
-            this.finishFlag.setParent(this.tileMap0!.node);
-            this.finishFlag.setPosition(
-                obj.x + obj.width / 2,
-                obj.y - obj.height / 2,
-                0
-            );
-            const rb = this.finishFlag.addComponent(cc.RigidBody);
-            rb.enabledContactListener = true;
-            rb.type = cc.RigidBodyType.Static;
-
-            const collider = this.finishFlag.addComponent(cc.PhysicsBoxCollider);
-            collider.size = new cc.Size(obj.width, obj.height);
-            collider.sensor = true;
-            collider.tag = EntityTag.FINISH;
-            collider.apply();
-
-            cc.log(`Created finish flag collider at (${this.finishFlag.x}, ${this.finishFlag.y})`);
-
             return;
         }
 
@@ -272,24 +229,44 @@ export default class GameManager extends cc.Component {
 
     loadPlayer() {
 
+        if(!this.tileMap0) {
+            cc.error("Tilemap not set in GameManager");
+            return;
+        }
+
         if(!this.playerPrefab) {
             cc.error("Player prefab not set in GameManager");
             return;
         }
         cc.log("Instantiating player");
 
-        this.playerInstance = cc.instantiate(this.playerPrefab);
+        const playerInstance = cc.instantiate(this.playerPrefab);
         const playerParent = this.worldNode || this.node;
-        playerParent.addChild(this.playerInstance);
-        this.playerInstance.setPosition(100, 200, 0);
-        let playerControl: any = this.playerInstance.getComponent("PlayerControl");
+        const mapProps = this.tileMap0.getProperties();
+        playerParent.addChild(playerInstance);
+        this.playerControl = playerInstance.getComponent("PlayerControl");
 
-        if (!playerControl) {
+        if (!this.playerControl) {
             cc.error("Player prefab does not have PlayerControl component");
             return;
         }
 
-        playerControl.setGameManager(this);
+        if(typeof mapProps.playerSpawnX !== "number" || typeof mapProps.playerSpawnY !== "number") {
+            cc.error("Tilemap missing playerSpawnX or playerSpawnY properties");
+            return;
+        }
+        const tileSize = this.tileMap0.getTileSize();
+        const spawnX = 
+            mapProps.playerSpawnX * 2 * tileSize.width - 0.5 * tileSize.width;
+        const spawnY = mapProps.playerSpawnY * 2 * tileSize.height - 0.5 * tileSize.height;
+        cc.log(`Player spawn position from tilemap properties: (${spawnX}, ${spawnY})`);
+
+        this.playerControl.setGameManager(this);
+        this.playerControl.initializePlayer(
+            this.playerMaxLives, 
+            this.mapWidth, 
+            cc.v3(spawnX, spawnY, 0)
+        );
 
         const mainCamera = cc.Camera.main;
         if(!mainCamera) {
@@ -303,15 +280,7 @@ export default class GameManager extends cc.Component {
             return;
         }
         this.loadPlayerSetCameraBounds(playerCamera);
-        playerCamera.setTarget(this.playerInstance);
-
-        const playerCollider = this.playerInstance.getComponent(cc.PhysicsCollider);
-        if (playerCollider) {
-            playerCollider.enabledContactListener = true;
-            playerCollider.tag = EntityTag.PLAYER;
-        } else {
-            cc.error("PlayerControl onLoad: missing PhysicsCollider");
-        }
+        playerCamera.setTarget(playerInstance);
 
     }
 
@@ -609,15 +578,9 @@ export default class GameManager extends cc.Component {
         return this.tileMap0.node.convertToWorldSpaceAR(cc.v2(mapPoint.x, highestSurfaceY)).y;
     }
 
-    isPlayerOutOfBounds() {
-        return this.playerInstance ? 
-            (this.playerInstance.y < 0 || this.playerInstance.x < 0 
-                || this.playerInstance.x > this.mapWidth) : false;
-    }
-
     // NOTE: Operations
     playerGrowUp() {
-        this.isPlayerGrowup = true;
+        this.playerControl?.growUp();
     }
 
     increasePlayerScore(points: number) {
@@ -625,8 +588,13 @@ export default class GameManager extends cc.Component {
         this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateScore(this.playerScore);
     }
 
+    updatePlayerLives(lives: number) {
+        this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateLives(lives);
+    }
+
     winGame() {
         cc.log("congratulations! You reached the finish flag and won the game!");
+        cc.director.loadScene("GameWin");
     }
 
     timerCountdown() {
@@ -641,61 +609,9 @@ export default class GameManager extends cc.Component {
 
     onTimerEnd() {
         cc.log("Time's up! Player ran out of time.");
-        this.killPlayer();
+        this?.playerControl?.damagePlayer(true);
     }
 
-    killPlayer() {
-        if(this.isPlayerInvincible) {
-            cc.log("Player is invincible, ignoring damage");
-            return;
-        }
-
-        if (!this.playerInstance) {
-            return;
-        }
-
-        if(this.isPlayerGrowup) {  
-            this.isPlayerGrowup = false;
-            cc.log("Player hit while growup, shrinking back down and granting temporary invincibility");
-            this.isPlayerInvincible = true;
-            this.scheduleOnce(() => {
-                this.isPlayerInvincible = false;
-            }, 1.0);
-            return;
-        }
-
-        if(this.playerLives > 0) {
-            this.queuePlayerRespawn();
-            this.playerLives--;
-            this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateLives(this.playerLives);
-        } 
-
-        if (this.playerLives <= 0){
-            this.gameOver();
-        }
-    }
-
-    queuePlayerRespawn() {
-        this.pendingPlayerRespawn = true;
-    }
-
-    respawnPlayer() {
-        if (!this.playerInstance) {
-            return;
-        }
-        const rb = this.playerInstance.getComponent(cc.RigidBody);
-
-        if (rb) {
-            rb.linearVelocity = cc.v2(0, 0);
-            rb.angularVelocity = 0;
-        }
-
-        this.playerInstance.setPosition(100, 200, 0);
-        this.playerInstance.setScale(1);
-        this.isPlayerGrowup = false;
-        this.isPlayerInvincible = false;
-        this.playerInstance.getComponent("PlayerControl").reset();
-    }
 
     gameOver() {
         cc.log("Game Over! Restarting game...");

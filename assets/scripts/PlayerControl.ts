@@ -13,7 +13,7 @@ enum Direction {
 }
 
 @ccclass
-export default class NewClass extends cc.Component {
+export default class PlayerControl extends cc.Component {
 
     private rb: cc.RigidBody = null;
     private move_pressed: [boolean, boolean] = [false, false];
@@ -21,10 +21,26 @@ export default class NewClass extends cc.Component {
     private movement_speed: number = 100;
     private jump_speed: number = 480;
     private gameManager: any = null;
+    private lives: number = 0;
+    private mapWidth: number = 0;
+    private spawnPosition: cc.Vec3 = cc.v3(100, 200, 0);
+    private isGrowup: boolean = false;
+    private isInvincible: boolean = false;
+    private pendingRespawn: boolean = false;
+    private anim: cc.Animation = null;
+    private currentAnim: string = "";
 
     // LIFE-CYCLE CALLBACKS:
     setGameManager(gameManager: any) {
         this.gameManager = gameManager;
+    }
+
+    initializePlayer(maxLives: number, mapWidth: number, spawnPosition: cc.Vec3) {
+        this.lives = maxLives;
+        this.mapWidth = mapWidth;
+        this.spawnPosition = spawnPosition;
+        this.node.setPosition(this.spawnPosition);
+        this.gameManager?.updatePlayerLives(this.lives);
     }
 
     setMovementSpeed(speed: number) {
@@ -88,13 +104,43 @@ export default class NewClass extends cc.Component {
 
     start () {
         this.rb = this.getComponent(cc.RigidBody);
+        this.anim = this.getComponent(cc.Animation);
 
         if (this.rb) {
             this.rb.enabledContactListener = true;
         }
+
+        if (!this.anim) {
+            cc.warn("PlayerControl start: missing Animation component");
+        }
+
+        const playerCollider = this.getComponent(cc.PhysicsCollider);
+        if (playerCollider) {
+            playerCollider.enabledContactListener = true;
+            playerCollider.tag = EntityTag.PLAYER;
+        } else {
+            cc.error("PlayerControl start: missing PhysicsCollider");
+        }
     }
 
     update (dt) {
+        if (!this.rb) {
+            return;
+        }
+
+        if (this.pendingRespawn) {
+            this.pendingRespawn = false;
+            this.respawn();
+        }
+
+        if (this.isOutOfBounds()) {
+            cc.log("Player fell off the map, resetting position");
+            this.damagePlayer(true);
+            cc.log(`Player lives remaining: ${this.lives}`);
+        }
+
+        this.node.setScale(this.isGrowup ? 3 : 2);
+
         if (this.move_pressed[Direction.LEFT]) {
             this.rb.linearVelocity = cc.v2(-this.movement_speed, this.rb.linearVelocity.y);
         } else if (this.move_pressed[Direction.RIGHT]) {
@@ -102,6 +148,8 @@ export default class NewClass extends cc.Component {
         } else {
             this.rb.linearVelocity = cc.v2(0, this.rb.linearVelocity.y);
         }
+
+        this.updateAnimation();
     }
 
     onBeginContact (contact, self, other) {
@@ -142,6 +190,77 @@ export default class NewClass extends cc.Component {
 
     reset() {
         this.jump_count = 0;
+    }
+
+    growUp() {
+        this.isGrowup = true;
+    }
+
+    damagePlayer(ignoreInvincibility: boolean = false) {
+        if (this.isInvincible) {
+            cc.log("Player is invincible, ignoring damage");
+            return;
+        }
+
+        if (this.isGrowup && !ignoreInvincibility) {
+            this.isGrowup = false;
+            cc.log("Player hit while growup, shrinking back down and granting temporary invincibility");
+            this.isInvincible = true;
+            this.scheduleOnce(() => {
+                this.isInvincible = false;
+            }, 1.0);
+            return;
+        }
+
+        if (this.lives > 0) {
+            this.lives--;
+            this.gameManager?.updatePlayerLives(this.lives);
+            this.queueRespawn();
+        }
+
+        if (this.lives <= 0) {
+            this.gameManager?.gameOver();
+        }
+    }
+
+    queueRespawn() {
+        this.pendingRespawn = true;
+    }
+
+    respawn() {
+        if (this.rb) {
+            this.rb.linearVelocity = cc.v2(0, 0);
+            this.rb.angularVelocity = 0;
+        }
+
+        this.node.setPosition(this.spawnPosition);
+        this.node.setScale(2);
+        this.isGrowup = false;
+        this.isInvincible = false;
+        this.reset();
+    }
+
+    private isOutOfBounds(): boolean {
+        return this.node.y < 0 || this.node.x < 0 || this.node.x > this.mapWidth;
+    }
+
+    private updateAnimation() {
+        const isMoving = this.move_pressed[Direction.LEFT] || this.move_pressed[Direction.RIGHT];
+        this.playAnimation(isMoving ? "small_run" : "small_idle");
+    }
+
+    private playAnimation(name: string) {
+        if (!this.anim || this.currentAnim === name) {
+            return;
+        }
+
+        if (!this.anim.getAnimationState(name)) {
+            cc.warn(`Player animation clip '${name}' not found`);
+            return;
+        }
+
+        this.currentAnim = name;
+        this.anim.play(name);
     }
 
     private isLayeredTerrain(other: cc.PhysicsCollider): boolean {
