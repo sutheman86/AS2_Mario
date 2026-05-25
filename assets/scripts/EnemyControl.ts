@@ -1,9 +1,8 @@
 const { ccclass, property } = cc._decorator;
+import {EntityTag}from "./EntityTag";
 
 @ccclass
 export default class EnemyControl extends cc.Component {
-    private static readonly PLAYER_TAG = 11;
-    private static readonly ENEMY_TAG = 7;
 
     @property
     speed: number = 60;
@@ -59,11 +58,12 @@ export default class EnemyControl extends cc.Component {
             return;
         }
 
-        if(other.tag === EnemyControl.ENEMY_TAG) { return; }
+        if(other.tag === EntityTag.ENEMY) { return; }
 
-        if (other.tag === EnemyControl.PLAYER_TAG) {
+        if (other.tag === EntityTag.PLAYER) {
             if(other.node.y > this.node.y + this.node.height / 2) {
                 this.die();
+                this.gameManager.increasePlayerScore(200);
             }
             else {
                 this.gameManager.killPlayer();
@@ -80,7 +80,7 @@ export default class EnemyControl extends cc.Component {
             return;
         }
 
-        if (other.tag == EnemyControl.ENEMY_TAG) {
+        if (other.tag == EntityTag.ENEMY) {
             contact.disabled = true;
         }
     }

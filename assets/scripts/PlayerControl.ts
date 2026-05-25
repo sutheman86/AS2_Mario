@@ -6,7 +6,7 @@
 //  - https://docs.cocos.com/creator/manual/en/scripting/life-cycle-callbacks.html
 
 const {ccclass, property} = cc._decorator;
-
+import { EntityTag} from "./EntityTag";
 enum Direction {
     LEFT = 0,
     RIGHT = 1
@@ -105,11 +105,16 @@ export default class NewClass extends cc.Component {
     }
 
     onBeginContact (contact, self, other) {
-        if(other.tag === 4) {
+        if(other.tag === EntityTag.QUESTION_BLOCK) {
             if (this.isHittingBottomOfCollider(self, other)) {
                 cc.log("PlayerControl onBeginContact: hit question block");
                 this.gameManager.questionBlockHit(other.node);
             }
+            return;
+        }
+
+        if (other.tag === EntityTag.FINISH) {
+            this.gameManager.winGame();
             return;
         }
 
@@ -120,6 +125,7 @@ export default class NewClass extends cc.Component {
         if (!this.shouldCountAsGroundContact(self, other)) {
             return;
         }
+
 
         this.jump_count = 0;
     }

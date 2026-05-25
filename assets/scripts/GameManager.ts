@@ -5,7 +5,8 @@
 // Learn life-cycle callbacks:
 //  - https://docs.cocos.com/creator/manual/en/scripting/life-cycle-callbacks.html
 
-const {ccclass, property} = cc._decorator;
+const { ccclass, property } = cc._decorator;
+import {EntityTag } from "./EntityTag";
 
 @ccclass
 export default class GameManager extends cc.Component {
@@ -35,6 +36,12 @@ export default class GameManager extends cc.Component {
     @property(cc.Prefab)
     mushroomPrefab: cc.Prefab | null = null;
 
+    @property(cc.Node)
+    uiOverlayNode: cc.Node | null = null;
+
+    @property
+    maxGameTimeSeconds: number = 999;
+
     private playerInstance: cc.Node | null = null;
     private isPlayerGrowup: boolean = false;
     private enemyInstances: cc.Node[] = [];
@@ -42,14 +49,69 @@ export default class GameManager extends cc.Component {
     private mushroomInstances: cc.Node[] = [];
     private playerLives: number = 0;
     private mapWidth: number = 0;
-    private terrainLayerNames: string[] = 
-    ["Ground", "Terrain1", "Terrain2", "Terrain3"];
+    private terrainLayerNames: string[] =
+        ["Ground", "Terrain1", "Terrain2", "Terrain3"];
     private objectLayerNames: string[] = ["Object Layer"];
-    private terrainColliders: {[layerName: string]: cc.PhysicsCollider[]} = {};
+    private terrainColliders: { [layerName: string]: cc.PhysicsCollider[] } = {};
     private pendingPlayerRespawn: boolean = false;
     private finishFlag: cc.Node | null = null;
     private isPlayerInvincible: boolean = false;
+    private remainingTime: number = 0;
+    private playerScore: number = 0;
 
+// NOTE: built-ins
+    onLoad () {
+        cc.PhysicsManager.FIXED_TIME_STEP = 1 / 60;
+        cc.PhysicsManager.MAX_ACCUMULATOR = 1 / 5;
+
+        const physics = cc.director.getPhysicsManager();
+        physics.enabled = true;
+        physics.enabledAccumulator = true;
+        physics.gravity = cc.v2(0, this.gravity);
+        cc.director.getCollisionManager().enabled = true;
+    }
+
+    start () {
+        this.loadTiledMap();
+        this.loadPlayer();
+        this.loadEnemy();
+        this.playerLives = this.playerMaxLives;
+
+        this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateLives(this.playerLives);
+        this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateScore(0);
+        this.remainingTime = this.maxGameTimeSeconds;
+        this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateTime(this.remainingTime);
+        this.playerScore = 0;
+        this.schedule(this.timerCountdown, 1);
+    }
+
+    update (dt: number) {
+        if(!this.playerInstance) {
+            return;
+        }
+
+        if (this.pendingPlayerRespawn) {
+            this.pendingPlayerRespawn = false;
+            this.respawnPlayer();
+        }
+
+        if(this.isPlayerOutOfBounds()) {
+            cc.log("Player fell off the map, resetting position");
+            this.killPlayer();
+            this.queuePlayerRespawn();
+            cc.log(`Player lives remaining: ${this.playerLives}`);
+        }
+
+        if(this.isPlayerGrowup) {
+            this.playerInstance.setScale(3);
+        }
+        else {
+            this.playerInstance.setScale(2);
+        }
+
+    }
+
+    // NOTE: load / initalize data
     loadEnemy() {
         if(!this.enemyPrefab) {
             cc.error("Enemy prefab not set in GameManager");
@@ -58,7 +120,7 @@ export default class GameManager extends cc.Component {
         cc.log("Instantiating enemy");
 
         const enemyInstance = cc.instantiate(this.enemyPrefab);
-        enemyInstance.getComponent(cc.PhysicsBoxCollider).tag = 7;
+        enemyInstance.getComponent(cc.PhysicsBoxCollider).tag = EntityTag.ENEMY; 
         const enemyParent = this.worldNode || this.node;
         enemyParent.addChild(enemyInstance);
         enemyInstance.setPosition(800, 200, 0);
@@ -106,7 +168,7 @@ export default class GameManager extends cc.Component {
             for (const obj of group.getObjects()) {
                 const collider = this.createTerrainCollider(layerName, obj);
                 if (layerName === "Ground" && collider) {
-                    collider.tag = 1;
+                    collider.tag = EntityTag.GROUND;
                     cc.log(`Tagged collider for ${layerName} as Ground`);
                 }
 
@@ -177,7 +239,7 @@ export default class GameManager extends cc.Component {
             const collider = this.finishFlag.addComponent(cc.PhysicsBoxCollider);
             collider.size = new cc.Size(obj.width, obj.height);
             collider.sensor = true;
-            collider.tag = 99; // finish flag
+            collider.tag = EntityTag.FINISH;
             collider.apply();
 
             cc.log(`Created finish flag collider at (${this.finishFlag.x}, ${this.finishFlag.y})`);
@@ -188,24 +250,72 @@ export default class GameManager extends cc.Component {
         cc.warn(`Unhandled map object type '${obj.kind}' on ${layerName}: ${obj.name || obj.id}`);
     }
 
-    debugTiledObject(layerName: string, obj: any) {
-        const fields: string[] = [];
-
-        for (const key in obj) {
-            const value = obj[key];
-
-            if (value === null || value === undefined) {
-                fields.push(`${key}=${value}`);
-            } else if (typeof value === "object") {
-                fields.push(`${key}={${Object.keys(value).join(",")}}`);
-            } else {
-                fields.push(`${key}=${value}`);
-            }
+    loadPlayerSetCameraBounds(playerCamera: any) {
+        if (!this.tileMap0) {
+            return;
         }
 
-        cc.log(`[${layerName}] object ${obj.name || obj.id}: ${fields.join("; ")}`);
+        const mapSize = this.tileMap0.getMapSize();
+        const tileSize = this.tileMap0.getTileSize();
+        const mapWidth = mapSize.width * tileSize.width;
+        const mapHeight = mapSize.height * tileSize.height;
+        const bottomLeft = this.tileMap0.node.convertToWorldSpaceAR(cc.v2(0, 0));
+        const topRight = this.tileMap0.node.convertToWorldSpaceAR(cc.v2(mapWidth, mapHeight));
+
+        playerCamera.setWorldBounds(
+            bottomLeft.x,
+            topRight.x,
+            bottomLeft.y,
+            topRight.y
+        );
     }
 
+    loadPlayer() {
+
+        if(!this.playerPrefab) {
+            cc.error("Player prefab not set in GameManager");
+            return;
+        }
+        cc.log("Instantiating player");
+
+        this.playerInstance = cc.instantiate(this.playerPrefab);
+        const playerParent = this.worldNode || this.node;
+        playerParent.addChild(this.playerInstance);
+        this.playerInstance.setPosition(100, 200, 0);
+        let playerControl: any = this.playerInstance.getComponent("PlayerControl");
+
+        if (!playerControl) {
+            cc.error("Player prefab does not have PlayerControl component");
+            return;
+        }
+
+        playerControl.setGameManager(this);
+
+        const mainCamera = cc.Camera.main;
+        if(!mainCamera) {
+            cc.error("Main camera not found in scene");
+            return;
+        }
+
+        const playerCamera = mainCamera.getComponent("PlayerCamera");
+        if (!playerCamera) {
+            cc.error("Main camera does not have PlayerCamera component");
+            return;
+        }
+        this.loadPlayerSetCameraBounds(playerCamera);
+        playerCamera.setTarget(this.playerInstance);
+
+        const playerCollider = this.playerInstance.getComponent(cc.PhysicsCollider);
+        if (playerCollider) {
+            playerCollider.enabledContactListener = true;
+            playerCollider.tag = EntityTag.PLAYER;
+        } else {
+            cc.error("PlayerControl onLoad: missing PhysicsCollider");
+        }
+
+    }
+
+    // NOTE: creating / destroying objects
     createTerrainCollider(layerName: string, obj: any): cc.PhysicsCollider | null {
         if(!this.tileMap0) {
             cc.error("Tilemap not set in GameManager");
@@ -255,12 +365,56 @@ export default class GameManager extends cc.Component {
         return collider;
     }
 
+    spawnMushroomFromBlock(blockNode: cc.Node) {
+        if (!this.mushroomPrefab) {
+            cc.error("Mushroom prefab not set in GameManager");
+            return;
+        }
+
+        const mushroom = cc.instantiate(this.mushroomPrefab);
+        const parent = blockNode.parent || this.worldNode || this.node;
+        parent.addChild(mushroom);
+
+        const blockCollider = blockNode.getComponent(cc.PhysicsBoxCollider);
+        const mushroomCollider = mushroom.getComponent(cc.PhysicsBoxCollider);
+        const blockHalfHeight = blockCollider ? blockCollider.size.height / 2 : blockNode.height / 2;
+        const mushroomHalfHeight = mushroomCollider ? mushroomCollider.size.height / 2 : mushroom.height / 2;
+
+        mushroom.getComponent("MushroomControl").setGameManager(this);
+
+        mushroom.setPosition(
+            blockNode.x,
+            blockNode.y + blockHalfHeight + mushroomHalfHeight + 2,
+            0
+        );
+
+        const rb = mushroom.getComponent(cc.RigidBody);
+        if (rb) {
+            rb.enabledContactListener = true;
+            rb.linearVelocity = cc.v2(0, 0);
+        } else {
+            cc.error("Mushroom prefab is missing RigidBody");
+        }
+
+        if (mushroomCollider) {
+            mushroomCollider.tag = EntityTag.MUSHROOM;
+            mushroomCollider.sensor = false;
+            mushroomCollider.apply();
+        } else {
+            cc.error("Mushroom prefab is missing PhysicsBoxCollider");
+        }
+
+        this.mushroomInstances.push(mushroom);
+        cc.log(`Spawned mushroom at (${mushroom.x}, ${mushroom.y})`);
+    }
+
+    // NOTE: rulesets
     shouldAllowPlayerTerrainContact(playerCollider: cc.PhysicsCollider, terrainCollider: cc.PhysicsCollider): boolean {
         if (!this.tileMap0 || !playerCollider || !terrainCollider) {
             return true;
         }
 
-        if(terrainCollider.tag === 1) { 
+        if(terrainCollider.tag === EntityTag.GROUND) { 
             cc.log("PlayerControl: Contact with Ground layer, allowing contact");
             return true; 
         }
@@ -291,6 +445,7 @@ export default class GameManager extends cc.Component {
         return Math.abs(surfaceY - targetSurfaceY) <= 8;
     }
 
+    // NOTE: getter
     getHighestReachableTerrainSurfaceYInXRange(playerLeftMapX: number, playerRightMapX: number, playerBottomMapY: number): number | null {
         let highestSurfaceY: number | null = null;
         const tolerance = 4;
@@ -454,121 +609,39 @@ export default class GameManager extends cc.Component {
         return this.tileMap0.node.convertToWorldSpaceAR(cc.v2(mapPoint.x, highestSurfaceY)).y;
     }
 
-    loadPlayer() {
-
-        if(!this.playerPrefab) {
-            cc.error("Player prefab not set in GameManager");
-            return;
-        }
-        cc.log("Instantiating player");
-
-        this.playerInstance = cc.instantiate(this.playerPrefab);
-        const playerParent = this.worldNode || this.node;
-        playerParent.addChild(this.playerInstance);
-        this.playerInstance.setPosition(100, 200, 0);
-        let playerControl: any = this.playerInstance.getComponent("PlayerControl");
-
-        if (!playerControl) {
-            cc.error("Player prefab does not have PlayerControl component");
-            return;
-        }
-
-        playerControl.setGameManager(this);
-
-        // NOTE: Setup player camera
-        const mainCamera = cc.Camera.main;
-        if(!mainCamera) {
-            cc.error("Main camera not found in scene");
-            return;
-        }
-
-        const playerCamera = mainCamera.getComponent("PlayerCamera");
-        if (!playerCamera) {
-            cc.error("Main camera does not have PlayerCamera component");
-            return;
-        }
-        this.setCameraBounds(playerCamera);
-        playerCamera.setTarget(this.playerInstance);
-
-        const playerCollider = this.playerInstance.getComponent(cc.PhysicsCollider);
-        if (playerCollider) {
-            playerCollider.enabledContactListener = true;
-            playerCollider.tag = 11;
-        } else {
-            cc.error("PlayerControl onLoad: missing PhysicsCollider");
-        }
-
-    }
-
-    setCameraBounds(playerCamera: any) {
-        if (!this.tileMap0) {
-            return;
-        }
-
-        const mapSize = this.tileMap0.getMapSize();
-        const tileSize = this.tileMap0.getTileSize();
-        const mapWidth = mapSize.width * tileSize.width;
-        const mapHeight = mapSize.height * tileSize.height;
-        const bottomLeft = this.tileMap0.node.convertToWorldSpaceAR(cc.v2(0, 0));
-        const topRight = this.tileMap0.node.convertToWorldSpaceAR(cc.v2(mapWidth, mapHeight));
-
-        playerCamera.setWorldBounds(
-            bottomLeft.x,
-            topRight.x,
-            bottomLeft.y,
-            topRight.y
-        );
-    }
-
-    onLoad () {
-        cc.PhysicsManager.FIXED_TIME_STEP = 1 / 60;
-        cc.PhysicsManager.MAX_ACCUMULATOR = 1 / 5;
-
-        const physics = cc.director.getPhysicsManager();
-        physics.enabled = true;
-        physics.enabledAccumulator = true;
-        physics.gravity = cc.v2(0, this.gravity);
-        cc.director.getCollisionManager().enabled = true;
-    }
-
-    start () {
-        this.loadTiledMap();
-        this.loadPlayer();
-        this.loadEnemy();
-        this.playerLives = this.playerMaxLives;
-    }
-
-
-    playerOutOfBounds() {
+    isPlayerOutOfBounds() {
         return this.playerInstance ? 
             (this.playerInstance.y < 0 || this.playerInstance.x < 0 
                 || this.playerInstance.x > this.mapWidth) : false;
     }
 
-    update (dt: number) {
-        if(!this.playerInstance) {
-            return;
-        }
+    // NOTE: Operations
+    playerGrowUp() {
+        this.isPlayerGrowup = true;
+    }
 
-        if (this.pendingPlayerRespawn) {
-            this.pendingPlayerRespawn = false;
-            this.respawnPlayer();
-        }
+    increasePlayerScore(points: number) {
+        this.playerScore += points;
+        this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateScore(this.playerScore);
+    }
 
-        if(this.playerOutOfBounds()) {
-            cc.log("Player fell off the map, resetting position");
-            this.queuePlayerRespawn();
-            this.playerLives--;
-            cc.log(`Player lives remaining: ${this.playerLives}`);
-        }
+    winGame() {
+        cc.log("congratulations! You reached the finish flag and won the game!");
+    }
 
-        if(this.isPlayerGrowup) {
-            this.playerInstance.setScale(3);
-        }
-        else {
-            this.playerInstance.setScale(2);
-        }
+    timerCountdown() {
+        this.remainingTime = Math.max(0, this.remainingTime - 1);
+        this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateTime(this.remainingTime);
 
+        if (this.remainingTime === 0) {
+            this.unschedule(this.timerCountdown);
+            this.onTimerEnd();
+        }
+    }
+
+    onTimerEnd() {
+        cc.log("Time's up! Player ran out of time.");
+        this.killPlayer();
     }
 
     killPlayer() {
@@ -594,8 +667,11 @@ export default class GameManager extends cc.Component {
         if(this.playerLives > 0) {
             this.queuePlayerRespawn();
             this.playerLives--;
-        } else {
-            cc.log("Player has no lives remaining, game over!");
+            this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateLives(this.playerLives);
+        } 
+
+        if (this.playerLives <= 0){
+            this.gameOver();
         }
     }
 
@@ -621,6 +697,12 @@ export default class GameManager extends cc.Component {
         this.playerInstance.getComponent("PlayerControl").reset();
     }
 
+    gameOver() {
+        cc.log("Game Over! Restarting game...");
+        cc.director.loadScene("GameOver");
+    }
+
+    // NOTE: callback
     questionBlockHit(blockNode: cc.Node) {
         cc.log(`Question block hit: ${blockNode.name}`);
         const index = this.questionBlockInstances.indexOf(blockNode);
@@ -633,50 +715,22 @@ export default class GameManager extends cc.Component {
         }
     }
 
-    spawnMushroomFromBlock(blockNode: cc.Node) {
-        if (!this.mushroomPrefab) {
-            cc.error("Mushroom prefab not set in GameManager");
-            return;
+    // NOTE: debug utility
+    debugTiledObject(layerName: string, obj: any) {
+        const fields: string[] = [];
+
+        for (const key in obj) {
+            const value = obj[key];
+
+            if (value === null || value === undefined) {
+                fields.push(`${key}=${value}`);
+            } else if (typeof value === "object") {
+                fields.push(`${key}={${Object.keys(value).join(",")}}`);
+            } else {
+                fields.push(`${key}=${value}`);
+            }
         }
 
-        const mushroom = cc.instantiate(this.mushroomPrefab);
-        const parent = blockNode.parent || this.worldNode || this.node;
-        parent.addChild(mushroom);
-
-        const blockCollider = blockNode.getComponent(cc.PhysicsBoxCollider);
-        const mushroomCollider = mushroom.getComponent(cc.PhysicsBoxCollider);
-        const blockHalfHeight = blockCollider ? blockCollider.size.height / 2 : blockNode.height / 2;
-        const mushroomHalfHeight = mushroomCollider ? mushroomCollider.size.height / 2 : mushroom.height / 2;
-
-        mushroom.getComponent("MushroomControl").setGameManager(this);
-
-        mushroom.setPosition(
-            blockNode.x,
-            blockNode.y + blockHalfHeight + mushroomHalfHeight + 2,
-            0
-        );
-
-        const rb = mushroom.getComponent(cc.RigidBody);
-        if (rb) {
-            rb.enabledContactListener = true;
-            rb.linearVelocity = cc.v2(0, 0);
-        } else {
-            cc.error("Mushroom prefab is missing RigidBody");
-        }
-
-        if (mushroomCollider) {
-            mushroomCollider.tag = 8;
-            mushroomCollider.sensor = false;
-            mushroomCollider.apply();
-        } else {
-            cc.error("Mushroom prefab is missing PhysicsBoxCollider");
-        }
-
-        this.mushroomInstances.push(mushroom);
-        cc.log(`Spawned mushroom at (${mushroom.x}, ${mushroom.y})`);
-    }
-
-    playerGrowUp() {
-        this.isPlayerGrowup = true;
+        cc.log(`[${layerName}] object ${obj.name || obj.id}: ${fields.join("; ")}`);
     }
 }
