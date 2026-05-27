@@ -69,12 +69,15 @@ export default class GameManager extends cc.Component {
         physics.gravity = cc.v2(0, this.gravity);
         cc.director.getCollisionManager().enabled = true;
         cc.log(this.tileMap0?.getProperties());
+
+        // DEBUG: debug purpose
+        // cc.director.getScheduler().setTimeScale(0.3);
     }
 
     start () {
         this.loadTiledMap();
         this.loadPlayer();
-        this.loadEnemy();
+        this.loadEnemy("Turtle");
 
         this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateScore(0);
         this.remainingTime = this.maxGameTimeSeconds;
@@ -84,7 +87,7 @@ export default class GameManager extends cc.Component {
     }
 
     // NOTE: load / initalize data
-    loadEnemy() {
+    loadEnemy(type: string = "Turtle") {
         if(!this.enemyPrefab) {
             cc.error("Enemy prefab not set in GameManager");
             return;
@@ -96,14 +99,14 @@ export default class GameManager extends cc.Component {
         const enemyParent = this.worldNode || this.node;
         enemyParent.addChild(enemyInstance);
         enemyInstance.setPosition(800, 200, 0);
-        let enemyControl: any = enemyInstance.getComponent("EnemyControl");
+        let enemyControl: any = enemyInstance.getComponent(`Enemy${type}Control`);
 
         if (!enemyControl) {
             cc.error("Enemy prefab does not have EnemyControl component");
             return;
         }
 
-        enemyControl.setGameManager(this);
+        enemyControl.initialize(this);
         this.enemyInstances.push(enemyInstance);
     }
 
@@ -305,7 +308,7 @@ export default class GameManager extends cc.Component {
             const collider = colliderNode.addComponent(cc.PhysicsPolygonCollider);
             colliderNode.setPosition(obj.x, obj.y, 0);
             collider.points = points.map((point: any) => cc.v2(point.x, point.y));
-            collider.friction = 0.3;
+            collider.friction = 0.8;
             collider.apply();
             collider["terrainPoints"] = collider.points.map((point: cc.Vec2) => {
                 return cc.v2(colliderNode.x + point.x, colliderNode.y + point.y);
@@ -610,6 +613,10 @@ export default class GameManager extends cc.Component {
     onTimerEnd() {
         cc.log("Time's up! Player ran out of time.");
         this?.playerControl?.damagePlayer(true);
+    }
+
+    damagePlayer() {
+        this.playerControl?.damagePlayer();
     }
 
 

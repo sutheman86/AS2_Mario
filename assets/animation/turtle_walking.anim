@@ -1,11 +1,11 @@
 {
   "__type__": "cc.AnimationClip",
-  "_name": "small_run",
+  "_name": "turtle_walking",
   "_objFlags": 0,
   "_native": "",
   "_duration": 0.5166666666666667,
   "sample": 60,
-  "speed": 0.5,
+  "speed": 1,
   "wrapMode": 2,
   "curveData": {
     "comps": {
@@ -14,19 +14,19 @@
           {
             "frame": 0,
             "value": {
-              "__uuid__": "9e3a7fcf-287a-48f7-bbf7-d1996c2cac64"
+              "__uuid__": "df17634b-1dc5-4d05-bf3d-7272637efddf"
             }
           },
           {
-            "frame": 0.16666666666666666,
+            "frame": 0.25,
             "value": {
-              "__uuid__": "4a73a383-65ae-4a08-b059-0a888aeec887"
+              "__uuid__": "b95ec047-5600-4b5c-b9da-7bf2a13ca4d5"
             }
           },
           {
             "frame": 0.5,
             "value": {
-              "__uuid__": "9e3a7fcf-287a-48f7-bbf7-d1996c2cac64"
+              "__uuid__": "df17634b-1dc5-4d05-bf3d-7272637efddf"
             }
           }
         ]

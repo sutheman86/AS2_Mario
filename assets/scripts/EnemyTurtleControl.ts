@@ -1,6 +1,7 @@
 const { ccclass, property } = cc._decorator;
 import {EntityTag}from "./EntityTag";
 
+
 @ccclass
 export default class EnemyControl extends cc.Component {
 
@@ -11,6 +12,9 @@ export default class EnemyControl extends cc.Component {
     private direction: number = -1;
     private gameManager: any = null;
     private collider: cc.PhysicsBoxCollider | null = null;
+    private isShell: boolean = false;
+    private anim: cc.Animation = null;
+    private currentAnim: string = "";
 
     @property
     ledgeLookAhead: number = 24;
@@ -18,8 +22,9 @@ export default class EnemyControl extends cc.Component {
     @property
     maxGroundDrop: number = 24;
 
-    setGameManager(gameManager: any) {
+    initialize(gameManager: any) {
         this.gameManager = gameManager;
+        this.anim = this.getComponent(cc.Animation);
     }
 
     onLoad() {
@@ -39,9 +44,14 @@ export default class EnemyControl extends cc.Component {
             this.rb.linearVelocity.y
         );
 
-        if (this.isOnGround() && !this.hasGroundAhead()) {
+        if (this.isOnGround() && !this.hasGroundAhead() && !this.isShell) {
             this.reverseDirection();
         }
+
+        if (this.isOutOfBounds()) {
+            this.die(true);
+        }
+        this.updateAnimation();
     }
 
     reverseDirection() {
@@ -49,8 +59,78 @@ export default class EnemyControl extends cc.Component {
         this.node.scaleX = Math.abs(this.node.scaleX) * this.direction;
     }
 
-    die() {
-        this.node.destroy();
+    private becomeShell() {
+        this.isShell = true;
+        this.speed = 0;
+        if (this.collider) {
+            this.collider.size = cc.size(16, 16);
+            this.collider.apply();
+        }
+    }
+
+    shellKicked(direction: number = 1) {
+        this.speed = direction * 100;
+    }
+
+    private playAnimation(name: string) {
+        if (!this.anim || this.currentAnim === name) {
+            return;
+        }
+
+        if (!this.anim.getAnimationState(name)) {
+            cc.warn(`Player animation clip '${name}' not found`);
+            return;
+        }
+
+        this.currentAnim = name;
+        this.anim.play(name);
+    }
+
+    private updateAnimation() {
+        // Placeholder for animation logic if needed
+        if (this.isShell) {
+            // Set shell animation
+            this.playAnimation("turtle_shell");
+        } else {
+            // Set walking animation
+            this.playAnimation("turtle_walking");
+        }
+    }
+
+    private die(suddenDeath: boolean = false) {
+        if(suddenDeath) {
+            this.node.destroy();
+        }
+        if(!this.isShell) {
+            this.becomeShell();
+        }
+    }
+
+    private isOutOfBounds(): boolean {
+        return this.node.y < 0 || this.node.x < 0 || this.node.x > this.mapWidth;
+    }
+
+    private isOnTopOfCollider(self: cc.PhysicsCollider, other: cc.PhysicsCollider): boolean {
+        const playerAabb = (self as any).getAABB();
+        const terrainAabb = (other as any).getAABB();
+
+        cc.log(playerAabb, terrainAabb);
+        return playerAabb.yMin >= terrainAabb.yMax - 8;
+    }
+
+    private decideColliderOrientation(self: cc.PhysicsCollider, other: cc.PhysicsCollider) {
+        const myAABB = (self as any).getAABB();
+        const marioAABB = (other as any).getAABB();
+        if(myAABB.xMin + 8 > marioAABB.xMax) { // right
+            cc.log("turtle shell kicked right");
+            return -1;
+        }
+        else if(myAABB.xMax - 8 < marioAABB.xMin) { // left
+            cc.log("turtle shell kicked left");
+            return 1;
+        }
+        cc.log("turtle shell not kicked");
+        return 0;
     }
 
     onBeginContact(contact, self, other) {
@@ -61,12 +141,19 @@ export default class EnemyControl extends cc.Component {
         if(other.tag === EntityTag.ENEMY) { return; }
 
         if (other.tag === EntityTag.PLAYER) {
-            if(other.node.y > this.node.y + this.node.height / 2) {
-                this.die();
+            const rb = other.node.getComponent(cc.RigidBody);
+            if(this.isOnTopOfCollider(other, self)) {
+                this.die(false);
                 this.gameManager.increasePlayerScore(200);
             }
             else {
-                this.gameManager.killPlayer();
+                if (this.isShell) {
+                    this.shellKicked(
+                        this.decideColliderOrientation(self, other))               
+                }
+                else {
+                    this.gameManager.damagePlayer();
+                }
             }
             return;
         }

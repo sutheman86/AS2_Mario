@@ -9,7 +9,8 @@ const {ccclass, property} = cc._decorator;
 import { EntityTag} from "./EntityTag";
 enum Direction {
     LEFT = 0,
-    RIGHT = 1
+    RIGHT = 1,
+    NONE = 2,
 }
 
 @ccclass
@@ -17,9 +18,10 @@ export default class PlayerControl extends cc.Component {
 
     private rb: cc.RigidBody = null;
     private move_pressed: [boolean, boolean] = [false, false];
-    private jump_count: number = 0;
     private movement_speed: number = 100;
     private jump_speed: number = 480;
+    private jump_count: number = 0;
+    private is_jumping: boolean = false;
     private gameManager: any = null;
     private lives: number = 0;
     private mapWidth: number = 0;
@@ -29,6 +31,12 @@ export default class PlayerControl extends cc.Component {
     private pendingRespawn: boolean = false;
     private anim: cc.Animation = null;
     private currentAnim: string = "";
+
+    @property(cc.Size)
+    smallMarioColliderSize: cc.Size = cc.size(16, 16);
+
+    @property(cc.Size)
+    bigMarioColliderSize: cc.Size = cc.size(16, 27);
 
     // LIFE-CYCLE CALLBACKS:
     setGameManager(gameManager: any) {
@@ -81,12 +89,6 @@ export default class PlayerControl extends cc.Component {
 
     onKeyUp (event: cc.Event.EventKeyboard) {
         switch(event.keyCode) {
-            case cc.macro.KEY.a:
-                this.move_pressed[Direction.LEFT] = false;
-                break;
-            case cc.macro.KEY.d:
-                this.move_pressed[Direction.RIGHT] = false;
-                break;
             case cc.macro.KEY.left:
                 this.move_pressed[Direction.LEFT] = false;
                 break;
@@ -97,6 +99,7 @@ export default class PlayerControl extends cc.Component {
                 if (this.jump_count < 2) {
                     this.rb.linearVelocity = cc.v2(this.rb.linearVelocity.x, this.jump_speed);
                     this.jump_count++;
+                    this.is_jumping = true;
                 }
                 break;
         }
@@ -141,14 +144,27 @@ export default class PlayerControl extends cc.Component {
 
         this.node.setScale(this.isGrowup ? 3 : 2);
 
-        if (this.move_pressed[Direction.LEFT]) {
+        let movement = Direction.NONE;
+
+        if(this.move_pressed[Direction.RIGHT] && this.move_pressed[Direction.LEFT]) {
+            movement = Direction.NONE;
+        } else if(this.move_pressed[Direction.RIGHT]) {
+            movement = Direction.RIGHT;
+        } else if(this.move_pressed[Direction.LEFT]) {
+            movement = Direction.LEFT;
+        } else {
+            movement = Direction.NONE;
+        }
+
+        if (movement === Direction.LEFT) {
             this.rb.linearVelocity = cc.v2(-this.movement_speed, this.rb.linearVelocity.y);
-        } else if (this.move_pressed[Direction.RIGHT]) {
+            this.node.scaleX = -Math.abs(this.node.scaleX);
+        } else if (movement === Direction.RIGHT) {
             this.rb.linearVelocity = cc.v2(this.movement_speed, this.rb.linearVelocity.y);
+            this.node.scaleX = Math.abs(this.node.scaleX);
         } else {
             this.rb.linearVelocity = cc.v2(0, this.rb.linearVelocity.y);
         }
-
         this.updateAnimation();
     }
 
@@ -157,7 +173,13 @@ export default class PlayerControl extends cc.Component {
             if (this.isHittingBottomOfCollider(self, other)) {
                 cc.log("PlayerControl onBeginContact: hit question block");
                 this.gameManager.questionBlockHit(other.node);
+                return;
             }
+
+            if (this.isOnTopOfCollider(self, other)) {
+                this.landPlayer();
+            }
+
             return;
         }
 
@@ -174,8 +196,7 @@ export default class PlayerControl extends cc.Component {
             return;
         }
 
-
-        this.jump_count = 0;
+        this.landPlayer();
     }
 
     onPreSolve(contact: cc.PhysicsContact, self: cc.PhysicsCollider, other: cc.PhysicsCollider) {
@@ -189,11 +210,21 @@ export default class PlayerControl extends cc.Component {
     }
 
     reset() {
-        this.jump_count = 0;
+        this.landPlayer();
     }
 
     growUp() {
         this.isGrowup = true;
+        const collider = this.getComponent(cc.PhysicsCollider);
+        collider.size = this.bigMarioColliderSize;
+        collider.apply();
+    }
+
+    shrinkDown() {
+        this.isGrowup = false;
+        const collider = this.getComponent(cc.PhysicsCollider);
+        collider.size = this.smallMarioColliderSize;
+        collider.apply();
     }
 
     damagePlayer(ignoreInvincibility: boolean = false) {
@@ -203,7 +234,7 @@ export default class PlayerControl extends cc.Component {
         }
 
         if (this.isGrowup && !ignoreInvincibility) {
-            this.isGrowup = false;
+            this.shrinkDown();
             cc.log("Player hit while growup, shrinking back down and granting temporary invincibility");
             this.isInvincible = true;
             this.scheduleOnce(() => {
@@ -235,7 +266,7 @@ export default class PlayerControl extends cc.Component {
 
         this.node.setPosition(this.spawnPosition);
         this.node.setScale(2);
-        this.isGrowup = false;
+        this.shrinkDown();
         this.isInvincible = false;
         this.reset();
     }
@@ -244,9 +275,39 @@ export default class PlayerControl extends cc.Component {
         return this.node.y < 0 || this.node.x < 0 || this.node.x > this.mapWidth;
     }
 
+    private landPlayer() {
+        this.jump_count = 0;
+        this.is_jumping = false;
+    }
+
     private updateAnimation() {
-        const isMoving = this.move_pressed[Direction.LEFT] || this.move_pressed[Direction.RIGHT];
-        this.playAnimation(isMoving ? "small_run" : "small_idle");
+        const variant = this.isGrowup ? "big" : "small";
+        if(this.anim.getAnimationState(`${variant}_jump`)?.isPlaying && !this.is_jumping) {
+            cc.log("jumping is still playing but player is not jumping, skip.");
+            return;
+        }
+        const isMoving = 
+            (!this.move_pressed[Direction.LEFT] && this.move_pressed[Direction.RIGHT]) ||
+            (this.move_pressed[Direction.LEFT] && !this.move_pressed[Direction.RIGHT]);
+        const isJumping = this.is_jumping;
+        const isFalling = this.rb.linearVelocity.y < 0 || (this.jump_count > 0 && !isJumping);
+        let desiredAnim = `${variant}_idle`;
+        if(isJumping) {
+            cc.log("Player is jumping");
+            this.anim.play(`${variant}_jump`);
+            this.is_jumping = false;
+            return;
+        } 
+
+        if (isFalling) {
+            cc.log("Player is falling");
+            desiredAnim = `${variant}_fall`;
+        } else if (isMoving) {
+            desiredAnim = `${variant}_run`;
+        } else {
+            cc.log("Player is idle");
+        }
+        this.playAnimation(desiredAnim);
     }
 
     private playAnimation(name: string) {

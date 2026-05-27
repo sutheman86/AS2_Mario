@@ -13,7 +13,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_name": "turtle_0",
+    "_name": "Goomba",
     "_objFlags": 0,
     "_parent": null,
     "_children": [],
@@ -27,16 +27,10 @@
       },
       {
         "__id__": 4
-      },
-      {
-        "__id__": 5
-      },
-      {
-        "__id__": 6
       }
     ],
     "_prefab": {
-      "__id__": 7
+      "__id__": 5
     },
     "_opacity": 255,
     "_color": {
@@ -48,8 +42,8 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 16,
-      "height": 27
+      "width": 20,
+      "height": 24
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -60,15 +54,15 @@
       "__type__": "TypedArray",
       "ctor": "Float64Array",
       "array": [
-        204.477,
-        149.159,
+        0,
+        0,
         0,
         0,
         0,
         0,
         1,
-        1.4,
-        1.2,
+        1,
+        1,
         1
       ]
     },
@@ -101,7 +95,7 @@
     "_srcBlendFactor": 770,
     "_dstBlendFactor": 771,
     "_spriteFrame": {
-      "__uuid__": "b95ec047-5600-4b5c-b9da-7bf2a13ca4d5"
+      "__uuid__": "71eaf990-195d-4b9f-a84d-0d7bf132ce6f"
     },
     "_type": 0,
     "_sizeMode": 1,
@@ -115,7 +109,7 @@
     "_fillRange": 0,
     "_isTrimmedMode": true,
     "_atlas": {
-      "__uuid__": "26854e98-df09-439e-967e-b389bb5a7a0d"
+      "__uuid__": "1529e224-292d-4347-9412-87e8d3fa4af2"
     },
     "_id": ""
   },
@@ -139,7 +133,7 @@
     },
     "_angularVelocity": 0,
     "_fixedRotation": true,
-    "enabledContactListener": true,
+    "enabledContactListener": false,
     "bullet": false,
     "awakeOnLoad": true,
     "_id": ""
@@ -152,7 +146,7 @@
       "__id__": 1
     },
     "_enabled": true,
-    "tag": 7,
+    "tag": 0,
     "_density": 1,
     "_sensor": false,
     "_friction": 0.2,
@@ -165,44 +159,9 @@
     },
     "_size": {
       "__type__": "cc.Size",
-      "width": 16,
-      "height": 27
+      "width": 20,
+      "height": 24
     },
-    "_id": ""
-  },
-  {
-    "__type__": "89332ssmvVBRIUKoja9JRoB",
-    "_name": "",
-    "_objFlags": 0,
-    "node": {
-      "__id__": 1
-    },
-    "_enabled": true,
-    "speed": 60,
-    "ledgeLookAhead": 24,
-    "maxGroundDrop": 24,
-    "_id": ""
-  },
-  {
-    "__type__": "cc.Animation",
-    "_name": "",
-    "_objFlags": 0,
-    "node": {
-      "__id__": 1
-    },
-    "_enabled": true,
-    "_defaultClip": null,
-    "_clips": [
-      null,
-      null,
-      {
-        "__uuid__": "1504a51c-fe29-4d0f-8f34-c3c177b3798d"
-      },
-      {
-        "__uuid__": "0a32010d-4271-477f-9939-25a931eb6be6"
-      }
-    ],
-    "playOnLoad": false,
     "_id": ""
   },
   {

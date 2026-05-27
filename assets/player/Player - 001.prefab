@@ -13,7 +13,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_name": "turtle_0",
+    "_name": "Player",
     "_objFlags": 0,
     "_parent": null,
     "_children": [],
@@ -49,7 +49,7 @@
     "_contentSize": {
       "__type__": "cc.Size",
       "width": 16,
-      "height": 27
+      "height": 26
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -60,15 +60,15 @@
       "__type__": "TypedArray",
       "ctor": "Float64Array",
       "array": [
-        204.477,
-        149.159,
+        0,
+        0,
         0,
         0,
         0,
         0,
         1,
-        1.4,
-        1.2,
+        2,
+        2,
         1
       ]
     },
@@ -101,7 +101,7 @@
     "_srcBlendFactor": 770,
     "_dstBlendFactor": 771,
     "_spriteFrame": {
-      "__uuid__": "b95ec047-5600-4b5c-b9da-7bf2a13ca4d5"
+      "__uuid__": "39f9b829-fedc-41c1-ad74-bf26c05e276f"
     },
     "_type": 0,
     "_sizeMode": 1,
@@ -115,7 +115,7 @@
     "_fillRange": 0,
     "_isTrimmedMode": true,
     "_atlas": {
-      "__uuid__": "26854e98-df09-439e-967e-b389bb5a7a0d"
+      "__uuid__": "c0cd65c6-642d-4487-a2e5-beb747cd66f4"
     },
     "_id": ""
   },
@@ -152,7 +152,7 @@
       "__id__": 1
     },
     "_enabled": true,
-    "tag": 7,
+    "tag": 0,
     "_density": 1,
     "_sensor": false,
     "_friction": 0.2,
@@ -166,21 +166,18 @@
     "_size": {
       "__type__": "cc.Size",
       "width": 16,
-      "height": 27
+      "height": 16
     },
     "_id": ""
   },
   {
-    "__type__": "89332ssmvVBRIUKoja9JRoB",
+    "__type__": "40912M0xGhE+4uDEjDq7h6s",
     "_name": "",
     "_objFlags": 0,
     "node": {
       "__id__": 1
     },
     "_enabled": true,
-    "speed": 60,
-    "ledgeLookAhead": 24,
-    "maxGroundDrop": 24,
     "_id": ""
   },
   {
@@ -193,14 +190,20 @@
     "_enabled": true,
     "_defaultClip": null,
     "_clips": [
-      null,
-      null,
       {
-        "__uuid__": "1504a51c-fe29-4d0f-8f34-c3c177b3798d"
+        "__uuid__": "dffa6d70-649e-450c-ad90-f6d417e55257"
       },
       {
-        "__uuid__": "0a32010d-4271-477f-9939-25a931eb6be6"
-      }
+        "__uuid__": "ab6d3645-bfdb-4e92-97e4-d356f876c600"
+      },
+      {
+        "__uuid__": "445ab2c0-0084-4d23-b45e-3e6ccd97c51f"
+      },
+      {
+        "__uuid__": "d2eb57ea-cc51-4357-9037-8640961f5975"
+      },
+      null,
+      null
     ],
     "playOnLoad": false,
     "_id": ""
