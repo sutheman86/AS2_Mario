@@ -19,7 +19,13 @@ export default class GameManager extends cc.Component {
     playerPrefab: cc.Prefab | null = null;
 
     @property(cc.Prefab)
-    enemyPrefab: cc.Prefab | null = null;
+    enemyTurtlePrefab: cc.Prefab | null = null;
+
+    @property(cc.Prefab)
+    enemyGoombaPrefab: cc.Prefab | null = null;
+
+    @property(cc.Prefab)
+    enemyFlowerPrefab: cc.Prefab | null = null;
 
     @property(cc.TiledMap)
     tileMap0: cc.TiledMap | null = null;
@@ -50,6 +56,10 @@ export default class GameManager extends cc.Component {
     private questionBlockInstances: cc.Node[] = [];
     private mushroomInstances: cc.Node[] = [];
     private mapWidth: number = 0;
+    private tileLayerNamesInDrawOrder: string[] =
+        ["Background", "Terrain3", "Terrain2", "Terrain1", "Object Layer", "Ground"];
+    private enemyZIndex: number = 9;
+    private flowerZIndex: number = 1;
     private terrainLayerNames: string[] =
         ["Ground", "Terrain1", "Terrain2", "Terrain3"];
     private objectLayerNames: string[] = ["Object Layer"];
@@ -77,7 +87,9 @@ export default class GameManager extends cc.Component {
     start () {
         this.loadTiledMap();
         this.loadPlayer();
-        this.loadEnemy("Turtle");
+        this.loadEnemy("Turtle", 400, 100);
+        this.loadEnemy("Flower", 432, 96);
+        this.loadEnemy("Goomba", 300, 200);
 
         this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateScore(0);
         this.remainingTime = this.maxGameTimeSeconds;
@@ -87,27 +99,42 @@ export default class GameManager extends cc.Component {
     }
 
     // NOTE: load / initalize data
-    loadEnemy(type: string = "Turtle") {
-        if(!this.enemyPrefab) {
-            cc.error("Enemy prefab not set in GameManager");
-            return;
-        }
+    loadEnemy(type: string = "Turtle", spawnX: number, spawnY: number) {
+        const classKey = `Enemy${type}Control`;
+
+
         cc.log("Instantiating enemy");
 
-        const enemyInstance = cc.instantiate(this.enemyPrefab);
+        const targetPrefab = (this as any)[`enemy${type}Prefab`]!;
+
+        if(!targetPrefab) {
+            cc.error(`Enemy ${type} prefab not set in GameManager`);
+            return;
+        }
+
+        const enemyInstance = cc.instantiate(targetPrefab);
         enemyInstance.getComponent(cc.PhysicsBoxCollider).tag = EntityTag.ENEMY; 
-        const enemyParent = this.worldNode || this.node;
+        const enemyParent = this.tileMap0 ? this.tileMap0.node : this.worldNode || this.node;
         enemyParent.addChild(enemyInstance);
-        enemyInstance.setPosition(800, 200, 0);
-        let enemyControl: any = enemyInstance.getComponent(`Enemy${type}Control`);
+        enemyInstance.zIndex = this.getEnemyZIndex(type);
+        enemyInstance.setPosition(spawnX!, spawnY!, 0);
+        let enemyControl: any = enemyInstance.getComponent(classKey);
 
         if (!enemyControl) {
-            cc.error("Enemy prefab does not have EnemyControl component");
+            cc.error(`Enemy ${type} prefab missing ${classKey} component`);
             return;
         }
 
         enemyControl.initialize(this);
         this.enemyInstances.push(enemyInstance);
+    }
+
+    getEnemyZIndex(type: string): number {
+        if (type === "Flower") {
+            return this.flowerZIndex;
+        }
+
+        return this.enemyZIndex;
     }
 
     loadTiledMap() {
@@ -119,6 +146,7 @@ export default class GameManager extends cc.Component {
         const mapSize = this.tileMap0.getMapSize();
         const tileSize = this.tileMap0.getTileSize();
         this.mapWidth = mapSize.width * tileSize.width * 2;
+        this.setTileLayerZIndexes();
 
         this.terrainColliders = {};
         this.loadTerrainLayers();
@@ -126,7 +154,8 @@ export default class GameManager extends cc.Component {
 
         this.finishFlag = cc.instantiate(this.finishFlagPrefab!);
         this.finishFlag.setParent(this.tileMap0.node);
-        const mapProps = this.tileMap0.getProperties();
+        const mapProps_raw = this.tileMap0.getProperties();
+        const mapProps = (mapProps_raw as any);
         if(typeof mapProps.finishX !== "number" || typeof mapProps.finishY !== "number") {
             cc.error("Invalid finish flag position in tilemap properties");
         } else {
@@ -164,6 +193,26 @@ export default class GameManager extends cc.Component {
                     cc.log(`Collider created for ${layerName}: ${obj.name || obj.id}`);
                 }
             }
+        }
+    }
+
+    setTileLayerZIndexes() {
+        if(!this.tileMap0) {
+            cc.error("Tilemap not set in GameManager");
+            return;
+        }
+
+        for (let i = 0; i < this.tileLayerNamesInDrawOrder.length; i++) {
+            const layerName = this.tileLayerNamesInDrawOrder[i];
+            const layer = this.tileMap0.getLayer(layerName);
+
+            if (!layer) {
+                cc.warn(`Tile layer '${layerName}' not found in tilemap`);
+                continue;
+            }
+
+            layer.node.zIndex = i * 2;
+            cc.log(`Tile layer '${layerName}' zIndex set to ${layer.node.zIndex}`);
         }
     }
 
@@ -245,7 +294,8 @@ export default class GameManager extends cc.Component {
 
         const playerInstance = cc.instantiate(this.playerPrefab);
         const playerParent = this.worldNode || this.node;
-        const mapProps = this.tileMap0.getProperties();
+        const mapProps_raw = this.tileMap0.getProperties();
+        const mapProps=  (mapProps_raw as any);
         playerParent.addChild(playerInstance);
         this.playerControl = playerInstance.getComponent("PlayerControl");
 
@@ -294,7 +344,8 @@ export default class GameManager extends cc.Component {
             return null;
         }
 
-        const colliderNode = new cc.Node(`${layerName}_Collider_${obj.name || obj.id}`);
+        const colliderNode_raw = new cc.Node(`${layerName}_Collider_${obj.name || obj.id}`);
+        const colliderNode = (colliderNode_raw as any);
         colliderNode.setParent(this.tileMap0.node);
         colliderNode["terrainLayerName"] = layerName;
         colliderNode["isLayeredTerrain"] = layerName !== "Ground" && this.terrainLayerNames.indexOf(layerName) >= 0;
@@ -460,7 +511,8 @@ export default class GameManager extends cc.Component {
         return highestSurfaceY;
     }
 
-    getColliderSurfaceYAtX(collider: cc.PhysicsCollider, playerMapX: number): number | null {
+    getColliderSurfaceYAtX(collider_a: cc.PhysicsCollider, playerMapX: number): number | null {
+        const collider = (collider_a as any);
         const points = collider["terrainPoints"] as cc.Vec2[];
 
         if (points && points.length >= 2) {
@@ -477,7 +529,8 @@ export default class GameManager extends cc.Component {
         return collider["terrainTop"];
     }
 
-    getColliderSurfaceYInXRange(collider: cc.PhysicsCollider, playerLeftMapX: number, playerRightMapX: number): number | null {
+    getColliderSurfaceYInXRange(collider_a: cc.PhysicsCollider, playerLeftMapX: number, playerRightMapX: number): number | null {
+        const collider = collider_a as any;
         const points = collider["terrainPoints"] as cc.Vec2[];
         const leftX = Math.min(playerLeftMapX, playerRightMapX);
         const rightX = Math.max(playerLeftMapX, playerRightMapX);

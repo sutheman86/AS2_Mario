@@ -1,0 +1,37 @@
+{
+  "__type__": "cc.AnimationClip",
+  "_name": "flower_bite",
+  "_objFlags": 0,
+  "_native": "",
+  "_duration": 0.4166666666666667,
+  "sample": 60,
+  "speed": 1,
+  "wrapMode": 2,
+  "curveData": {
+    "comps": {
+      "cc.Sprite": {
+        "spriteFrame": [
+          {
+            "frame": 0,
+            "value": {
+              "__uuid__": "b509815d-42e5-48bf-9a9e-331980734126"
+            }
+          },
+          {
+            "frame": 0.2,
+            "value": {
+              "__uuid__": "463d2219-a0df-4415-978d-ace3be0c5af7"
+            }
+          },
+          {
+            "frame": 0.4,
+            "value": {
+              "__uuid__": "463d2219-a0df-4415-978d-ace3be0c5af7"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "events": []
+}

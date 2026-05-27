@@ -283,7 +283,6 @@ export default class PlayerControl extends cc.Component {
     private updateAnimation() {
         const variant = this.isGrowup ? "big" : "small";
         if(this.anim.getAnimationState(`${variant}_jump`)?.isPlaying && !this.is_jumping) {
-            cc.log("jumping is still playing but player is not jumping, skip.");
             return;
         }
         const isMoving = 
@@ -293,19 +292,16 @@ export default class PlayerControl extends cc.Component {
         const isFalling = this.rb.linearVelocity.y < 0 || (this.jump_count > 0 && !isJumping);
         let desiredAnim = `${variant}_idle`;
         if(isJumping) {
-            cc.log("Player is jumping");
             this.anim.play(`${variant}_jump`);
             this.is_jumping = false;
             return;
         } 
 
         if (isFalling) {
-            cc.log("Player is falling");
             desiredAnim = `${variant}_fall`;
         } else if (isMoving) {
             desiredAnim = `${variant}_run`;
         } else {
-            cc.log("Player is idle");
         }
         this.playAnimation(desiredAnim);
     }

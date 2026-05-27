@@ -81,10 +81,10 @@
     "_active": true,
     "_components": [
       {
-        "__id__": 54
+        "__id__": 53
       },
       {
-        "__id__": 55
+        "__id__": 54
       }
     ],
     "_prefab": null,
@@ -147,9 +147,6 @@
     "_components": [
       {
         "__id__": 4
-      },
-      {
-        "__id__": 53
       }
     ],
     "_prefab": null,
@@ -212,8 +209,14 @@
     "playerPrefab": {
       "__uuid__": "2c98d7ff-6fa6-43fb-bf58-a2760c3b6177"
     },
-    "enemyPrefab": {
+    "enemyTurtlePrefab": {
       "__uuid__": "f2f0968a-b3e9-4291-8f4c-a138e3006868"
+    },
+    "enemyGoombaPrefab": {
+      "__uuid__": "e42f9932-8524-4276-b1bd-c1b903f83b91"
+    },
+    "enemyFlowerPrefab": {
+      "__uuid__": "5ea41818-619d-433a-8c3a-b4d439511fae"
     },
     "tileMap0": {
       "__id__": 5
@@ -2159,17 +2162,6 @@
       "__id__": 35
     },
     "_id": "f0kEMGpSJDhZfek78G2GW/"
-  },
-  {
-    "__type__": "61d6a0pWv9KsYBcEq5xrp8m",
-    "_name": "",
-    "_objFlags": 0,
-    "node": {
-      "__id__": 3
-    },
-    "_enabled": true,
-    "drawAabb": true,
-    "_id": "93Vu6NIJdFvroqq3dS93Bs"
   },
   {
     "__type__": "cc.Canvas",

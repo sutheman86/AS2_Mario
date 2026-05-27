@@ -1,9 +1,8 @@
 const { ccclass, property } = cc._decorator;
 import {EntityTag}from "./EntityTag";
 
-
 @ccclass
-export default class EnemyControl extends cc.Component {
+export default class EnemyGoombaControl extends cc.Component {
 
     @property
     speed: number = 60;
@@ -12,9 +11,10 @@ export default class EnemyControl extends cc.Component {
     private direction: number = -1;
     private gameManager: any = null;
     private collider: cc.PhysicsBoxCollider | null = null;
-    private isShell: boolean = false;
+    private isSquashed: boolean = false;
     private anim: cc.Animation = null;
     private currentAnim: string = "";
+    private visualNode: cc.Node | null = null;
 
     @property
     ledgeLookAhead: number = 24;
@@ -24,7 +24,8 @@ export default class EnemyControl extends cc.Component {
 
     initialize(gameManager: any) {
         this.gameManager = gameManager;
-        this.anim = this.getComponent(cc.Animation);
+        this.visualNode = this.node.getChildByName("Visual");
+        this.anim = this.visualNode.getComponent(cc.Animation);
     }
 
     onLoad() {
@@ -44,7 +45,7 @@ export default class EnemyControl extends cc.Component {
             this.rb.linearVelocity.y
         );
 
-        if (this.isOnGround() && !this.hasGroundAhead() && !this.isShell) {
+        if (this.isOnGround() && !this.hasGroundAhead() && !this.isSquashed) {
             this.reverseDirection();
         }
 
@@ -59,8 +60,8 @@ export default class EnemyControl extends cc.Component {
         this.node.scaleX = Math.abs(this.node.scaleX) * this.direction;
     }
 
-    private becomeShell() {
-        this.isShell = true;
+    private squashed() {
+        this.isSquashed = true;
         this.speed = 0;
         if (this.collider) {
             this.collider.size = cc.size(16, 16);
@@ -87,22 +88,19 @@ export default class EnemyControl extends cc.Component {
     }
 
     private updateAnimation() {
-        // Placeholder for animation logic if needed
-        if (this.isShell) {
-            // Set shell animation
-            this.playAnimation("turtle_shell");
+        if (this.isSquashed) {
+            this.playAnimation("goomba_squashed");
         } else {
-            // Set walking animation
-            this.playAnimation("turtle_walking");
+            this.playAnimation("goomba_normal");
         }
     }
 
-    private die(suddenDeath: boolean = false) {
-        if(suddenDeath) {
-            this.node.destroy();
-        }
-        if(!this.isShell) {
-            this.becomeShell();
+    private die() {
+        if(!this.isSquashed) {
+            this.squashed();
+            this.scheduleOnce(() => {
+                this.node.destroy();
+            }, 2);
         }
     }
 
@@ -123,11 +121,11 @@ export default class EnemyControl extends cc.Component {
         const marioAABB = (other as any).getAABB();
         if(myAABB.xMin + 8 > marioAABB.xMax) { // right
             cc.log("turtle shell kicked right");
-            return 1;
+            return -1;
         }
         else if(myAABB.xMax - 8 < marioAABB.xMin) { // left
             cc.log("turtle shell kicked left");
-            return -1;
+            return 1;
         }
         cc.log("turtle shell not kicked");
         return 0;
@@ -142,16 +140,15 @@ export default class EnemyControl extends cc.Component {
 
         if (other.tag === EntityTag.PLAYER) {
             const rb = other.node.getComponent(cc.RigidBody);
-            if(this.isOnTopOfCollider(other, self) && !this.isShell) {
-                this.die(false);
-                this.gameManager.increasePlayerScore(200);
+            if(this.isOnTopOfCollider(other, self)) {
+                this.die();
+                if(!this.isSquashed) {
+                    this.gameManager.increasePlayerScore(200);
+                }
+                rb.linearVelocity = cc.v2(rb.linearVelocity.x, 360);
             }
             else {
-                if (this.isShell) {
-                    this.shellKicked(
-                        this.decideColliderOrientation(self, other))               
-                }
-                else {
+                if (!this.isSquashed) {
                     this.gameManager.damagePlayer();
                 }
             }

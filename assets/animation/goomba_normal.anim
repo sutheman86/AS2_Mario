@@ -1,9 +1,42 @@
 {
   "__type__": "cc.AnimationClip",
-  "_name": "",
+  "_name": "goomba_normal",
   "_objFlags": 0,
-  "_duration": 0,
+  "_native": "",
+  "_duration": 0.6,
   "sample": 60,
-  "curveData": {},
+  "speed": 1,
+  "wrapMode": 2,
+  "curveData": {
+    "comps": {
+      "cc.Sprite": {
+        "spriteFrame": [
+          {
+            "frame": 0,
+            "value": {
+              "__uuid__": "71eaf990-195d-4b9f-a84d-0d7bf132ce6f"
+            }
+          }
+        ]
+      }
+    },
+    "props": {
+      "scaleX": [
+        {
+          "frame": 0,
+          "value": 1,
+          "curve": "constant"
+        },
+        {
+          "frame": 0.3,
+          "value": -1
+        },
+        {
+          "frame": 0.6,
+          "value": -1
+        }
+      ]
+    }
+  },
   "events": []
 }
