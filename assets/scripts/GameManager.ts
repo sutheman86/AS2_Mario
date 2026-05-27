@@ -8,6 +8,17 @@
 const { ccclass, property } = cc._decorator;
 import {EntityTag } from "./EntityTag";
 
+type EnemyTypeName = "Turtle" | "Goomba" | "Flower";
+
+interface EnemySpawnPoint {
+    id: number;
+    enemyType: EnemyTypeName;
+    x: number;
+    y: number;
+    respawnPeriod: number;
+    activeEnemy: cc.Node | null;
+}
+
 @ccclass
 export default class GameManager extends cc.Component {
 
@@ -63,6 +74,8 @@ export default class GameManager extends cc.Component {
     private terrainLayerNames: string[] =
         ["Ground", "Terrain1", "Terrain2", "Terrain3"];
     private objectLayerNames: string[] = ["Object Layer"];
+    private enemyLayerName: string = "EnemyLayer";
+    private enemySpawnPoints: { [spawnId: number]: EnemySpawnPoint } = {};
     private terrainColliders: { [layerName: string]: cc.PhysicsCollider[] } = {};
     private finishFlag: cc.Node | null = null;
     private remainingTime: number = 0;
@@ -87,9 +100,7 @@ export default class GameManager extends cc.Component {
     start () {
         this.loadTiledMap();
         this.loadPlayer();
-        this.loadEnemy("Turtle", 400, 100);
-        this.loadEnemy("Flower", 432, 96);
-        this.loadEnemy("Goomba", 300, 200);
+        this.loadEnemyLayer();
 
         this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateScore(0);
         this.remainingTime = this.maxGameTimeSeconds;
@@ -99,7 +110,7 @@ export default class GameManager extends cc.Component {
     }
 
     // NOTE: load / initalize data
-    loadEnemy(type: string = "Turtle", spawnX: number, spawnY: number) {
+    loadEnemy(type: string = "Turtle", spawnX: number, spawnY: number, spawnId: number | null = null): cc.Node | null {
         const classKey = `Enemy${type}Control`;
 
 
@@ -109,7 +120,7 @@ export default class GameManager extends cc.Component {
 
         if(!targetPrefab) {
             cc.error(`Enemy ${type} prefab not set in GameManager`);
-            return;
+            return null;
         }
 
         const enemyInstance = cc.instantiate(targetPrefab);
@@ -122,11 +133,12 @@ export default class GameManager extends cc.Component {
 
         if (!enemyControl) {
             cc.error(`Enemy ${type} prefab missing ${classKey} component`);
-            return;
+            return null;
         }
 
-        enemyControl.initialize(this);
+        enemyControl.initialize(this, spawnId);
         this.enemyInstances.push(enemyInstance);
+        return enemyInstance;
     }
 
     getEnemyZIndex(type: string): number {
@@ -135,6 +147,121 @@ export default class GameManager extends cc.Component {
         }
 
         return this.enemyZIndex;
+    }
+
+    loadEnemyLayer() {
+        if(!this.tileMap0) {
+            cc.error("Tilemap not set in GameManager");
+            return;
+        }
+
+        const group = this.tileMap0.getObjectGroup(this.enemyLayerName);
+
+        if (!group) {
+            cc.warn(`Enemy layer '${this.enemyLayerName}' not found in tilemap`);
+            return;
+        }
+
+        const layerProps = group.getProperties() as any;
+        const goombaRespawnPeriod = Number(layerProps.respawnGoombaPeriod || 0);
+        const turtleRespawnPeriod = Number(layerProps.respawnTurtlePeriod || 0);
+
+        for (const obj of group.getObjects()) {
+            this.loadEnemySpawnPoint(obj, goombaRespawnPeriod, turtleRespawnPeriod);
+        }
+    }
+
+    loadEnemySpawnPoint(obj: any, goombaRespawnPeriod: number, turtleRespawnPeriod: number) {
+        const enemyType = this.getEnemyTypeFromObject(obj);
+
+        if (!enemyType) {
+            cc.warn(`Enemy spawn ${obj.name || obj.id} has invalid enemy value '${obj.enemy}'`);
+            return;
+        }
+
+        if (!obj.width || !obj.height) {
+            cc.warn(`Enemy spawn ${obj.name || obj.id} missing rectangle width/height`);
+            return;
+        }
+
+        const spawnPoint: EnemySpawnPoint = {
+            id: Number(obj.id),
+            enemyType,
+            x: obj.x + obj.width / 2,
+            y: obj.y - obj.height / 2,
+            respawnPeriod: this.getEnemyRespawnPeriod(enemyType, goombaRespawnPeriod, turtleRespawnPeriod),
+            activeEnemy: null,
+        };
+
+        this.enemySpawnPoints[spawnPoint.id] = spawnPoint;
+        this.spawnEnemyFromPoint(spawnPoint.id);
+    }
+
+    spawnEnemyFromPoint(spawnId: number) {
+        const spawnPoint = this.enemySpawnPoints[spawnId];
+
+        if (!spawnPoint || spawnPoint.activeEnemy) {
+            return;
+        }
+
+        spawnPoint.activeEnemy = this.loadEnemy(
+            spawnPoint.enemyType,
+            spawnPoint.x,
+            spawnPoint.y,
+            spawnPoint.id
+        );
+    }
+
+    enemyKilled(spawnId: number | null, enemyNode: cc.Node) {
+        const index = this.enemyInstances.indexOf(enemyNode);
+
+        if (index >= 0) {
+            this.enemyInstances.splice(index, 1);
+        }
+
+        if (spawnId === null || spawnId === undefined) {
+            return;
+        }
+
+        const spawnPoint = this.enemySpawnPoints[spawnId];
+
+        if (!spawnPoint || spawnPoint.activeEnemy !== enemyNode) {
+            return;
+        }
+
+        spawnPoint.activeEnemy = null;
+
+        if (spawnPoint.enemyType === "Flower") {
+            return;
+        }
+
+        this.scheduleOnce(() => {
+            this.spawnEnemyFromPoint(spawnId);
+        }, spawnPoint.respawnPeriod);
+    }
+
+    getEnemyTypeFromObject(obj: any): EnemyTypeName | null {
+        switch (Number(obj.enemy)) {
+            case 0:
+                return "Turtle";
+            case 1:
+                return "Goomba";
+            case 2:
+                return "Flower";
+            default:
+                return null;
+        }
+    }
+
+    getEnemyRespawnPeriod(enemyType: EnemyTypeName, goombaRespawnPeriod: number, turtleRespawnPeriod: number): number {
+        switch (enemyType) {
+            case "Goomba":
+                return goombaRespawnPeriod;
+            case "Turtle":
+                return turtleRespawnPeriod;
+            default:
+                return 0;
+        }
     }
 
     loadTiledMap() {

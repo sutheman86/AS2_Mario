@@ -15,6 +15,8 @@ export default class EnemyControl extends cc.Component {
     private isShell: boolean = false;
     private anim: cc.Animation = null;
     private currentAnim: string = "";
+    private spawnId: number | null = null;
+    private hasReportedKilled: boolean = false;
 
     @property
     ledgeLookAhead: number = 24;
@@ -22,8 +24,9 @@ export default class EnemyControl extends cc.Component {
     @property
     maxGroundDrop: number = 24;
 
-    initialize(gameManager: any) {
+    initialize(gameManager: any, spawnId: number | null = null) {
         this.gameManager = gameManager;
+        this.spawnId = spawnId;
         this.anim = this.getComponent(cc.Animation);
     }
 
@@ -99,24 +102,28 @@ export default class EnemyControl extends cc.Component {
 
     private die(suddenDeath: boolean = false) {
         if(suddenDeath) {
+            this.reportKilled();
             this.node.destroy();
+            return;
         }
         if(!this.isShell) {
             this.becomeShell();
         }
     }
 
+    private reportKilled() {
+        if (this.hasReportedKilled) {
+            return;
+        }
+
+        this.hasReportedKilled = true;
+        this.gameManager?.enemyKilled(this.spawnId, this.node);
+    }
+
     private isOutOfBounds(): boolean {
         return this.node.y < 0 || this.node.x < 0 || this.node.x > this.mapWidth;
     }
 
-    private isOnTopOfCollider(self: cc.PhysicsCollider, other: cc.PhysicsCollider): boolean {
-        const playerAabb = (self as any).getAABB();
-        const terrainAabb = (other as any).getAABB();
-
-        cc.log(playerAabb, terrainAabb);
-        return playerAabb.yMin >= terrainAabb.yMax - 8;
-    }
 
     private decideColliderOrientation(self: cc.PhysicsCollider, other: cc.PhysicsCollider) {
         const myAABB = (self as any).getAABB();
@@ -159,6 +166,12 @@ export default class EnemyControl extends cc.Component {
         }
 
         this.reverseDirection();
+    }
+
+    private isOnTopOfCollider(mario: cc.PhysicsCollider, enemy: cc.PhysicsCollider): boolean {
+        const marioAABB = (mario as any).getAABB();
+        const enemyAABB = (enemy as any).getAABB();
+        return marioAABB.yMin >= enemyAABB.yMax - 12;
     }
 
     onPreSolve(contact: cc.PhysicsContact, self: cc.PhysicsCollider, other: cc.PhysicsCollider) {
