@@ -31,12 +31,23 @@ export default class PlayerControl extends cc.Component {
     private pendingRespawn: boolean = false;
     private anim: cc.Animation = null;
     private currentAnim: string = "";
+    private isDeadSequencePlaying: boolean = false;
+    private isVictorySequencePlaying: boolean = false;
+    private isVictoryGrounded: boolean = false;
+    private victoryTransitionScheduled: boolean = false;
+    private isPowerTransitionPlaying: boolean = false;
 
     @property(cc.Size)
     smallMarioColliderSize: cc.Size = cc.size(16, 16);
 
     @property(cc.Size)
     bigMarioColliderSize: cc.Size = cc.size(16, 27);
+
+    @property
+    victorySlideSpeed: number = 60;
+
+    @property(cc.AudioClip)
+    jumpSound: cc.AudioClip | null = null;
 
     // LIFE-CYCLE CALLBACKS:
     setGameManager(gameManager: any) {
@@ -71,6 +82,10 @@ export default class PlayerControl extends cc.Component {
     }
 
     onKeyDown (event: cc.Event.EventKeyboard) {
+        if (this.isDeadSequencePlaying || this.isVictorySequencePlaying || this.isPowerTransitionPlaying || this.gameManager?.isGameplayPaused?.()) {
+            return;
+        }
+
         switch(event.keyCode) {
             case cc.macro.KEY.a:
                 this.move_pressed[Direction.LEFT] = true;
@@ -88,6 +103,10 @@ export default class PlayerControl extends cc.Component {
     }
 
     onKeyUp (event: cc.Event.EventKeyboard) {
+        if (this.isDeadSequencePlaying || this.isVictorySequencePlaying || this.isPowerTransitionPlaying || this.gameManager?.isGameplayPaused?.()) {
+            return;
+        }
+
         switch(event.keyCode) {
             case cc.macro.KEY.left:
                 this.move_pressed[Direction.LEFT] = false;
@@ -100,6 +119,7 @@ export default class PlayerControl extends cc.Component {
                     this.rb.linearVelocity = cc.v2(this.rb.linearVelocity.x, this.jump_speed);
                     this.jump_count++;
                     this.is_jumping = true;
+                    this.playSound(this.jumpSound);
                 }
                 break;
         }
@@ -128,6 +148,22 @@ export default class PlayerControl extends cc.Component {
 
     update (dt) {
         if (!this.rb) {
+            return;
+        }
+
+        if (this.isDeadSequencePlaying) {
+            return;
+        }
+
+        if (this.isPowerTransitionPlaying) {
+            this.rb.linearVelocity = cc.v2(0, this.rb.linearVelocity.y);
+            return;
+        }
+
+        if (this.isVictorySequencePlaying) {
+            this.rb.linearVelocity = this.isVictoryGrounded
+                ? cc.v2(0, 0)
+                : cc.v2(0, -this.victorySlideSpeed);
             return;
         }
 
@@ -169,6 +205,18 @@ export default class PlayerControl extends cc.Component {
     }
 
     onBeginContact (contact, self, other) {
+        if (this.isDeadSequencePlaying || this.isPowerTransitionPlaying) {
+            return;
+        }
+
+        if (this.isVictorySequencePlaying) {
+            if (this.isVictoryGroundContact(self, other)) {
+                this.landPlayer();
+            }
+
+            return;
+        }
+
         if(other.tag === EntityTag.QUESTION_BLOCK) {
             if (this.isHittingBottomOfCollider(self, other)) {
                 cc.log("PlayerControl onBeginContact: hit question block");
@@ -200,6 +248,19 @@ export default class PlayerControl extends cc.Component {
     }
 
     onPreSolve(contact: cc.PhysicsContact, self: cc.PhysicsCollider, other: cc.PhysicsCollider) {
+        if (this.isDeadSequencePlaying) {
+            contact.disabled = true;
+            return;
+        }
+
+        if (this.isVictorySequencePlaying) {
+            if (this.isVictoryGroundContact(self, other)) {
+                this.landPlayer();
+            }
+
+            return;
+        }
+
         if (!this.isLayeredTerrain(other)) {
             return;
         }
@@ -214,20 +275,53 @@ export default class PlayerControl extends cc.Component {
     }
 
     growUp() {
+        if (this.isGrowup || this.isPowerTransitionPlaying) {
+            return;
+        }
+
+        this.playPowerTransition("small_grow", true);
+    }
+
+    applyGrowUp() {
         this.isGrowup = true;
-        const collider = this.getComponent(cc.PhysicsCollider);
-        collider.size = this.bigMarioColliderSize;
-        collider.apply();
+        this.resizePlayerColliderKeepingBottom(this.bigMarioColliderSize);
     }
 
     shrinkDown() {
+        if (!this.isGrowup || this.isPowerTransitionPlaying) {
+            return;
+        }
+
+        this.playPowerTransition("big_shrink", false);
+    }
+
+    applyShrinkDown() {
         this.isGrowup = false;
-        const collider = this.getComponent(cc.PhysicsCollider);
-        collider.size = this.smallMarioColliderSize;
+        this.resizePlayerColliderKeepingBottom(this.smallMarioColliderSize);
+    }
+
+    private resizePlayerColliderKeepingBottom(size: cc.Size) {
+        const collider = this.getComponent(cc.PhysicsBoxCollider);
+
+        if (!collider) {
+            cc.error("PlayerControl: missing PhysicsBoxCollider");
+            return;
+        }
+
+        const oldBottom = collider.offset.y - collider.size.height / 2;
+        collider.size = size;
+        collider.offset = cc.v2(
+            collider.offset.x,
+            oldBottom + collider.size.height / 2
+        );
         collider.apply();
     }
 
     damagePlayer(ignoreInvincibility: boolean = false) {
+        if (this.isDeadSequencePlaying || this.isVictorySequencePlaying) {
+            return;
+        }
+
         if (this.isInvincible) {
             cc.log("Player is invincible, ignoring damage");
             return;
@@ -237,20 +331,18 @@ export default class PlayerControl extends cc.Component {
             this.shrinkDown();
             cc.log("Player hit while growup, shrinking back down and granting temporary invincibility");
             this.isInvincible = true;
-            this.scheduleOnce(() => {
-                this.isInvincible = false;
-            }, 1.0);
             return;
         }
 
         if (this.lives > 0) {
             this.lives--;
             this.gameManager?.updatePlayerLives(this.lives);
-            this.queueRespawn();
+            this.playDeathSequence(this.lives <= 0);
+            return;
         }
 
         if (this.lives <= 0) {
-            this.gameManager?.gameOver();
+            this.playDeathSequence(true);
         }
     }
 
@@ -266,9 +358,94 @@ export default class PlayerControl extends cc.Component {
 
         this.node.setPosition(this.spawnPosition);
         this.node.setScale(2);
-        this.shrinkDown();
-        this.isInvincible = false;
+        this.applyShrinkDown();
+        this.isInvincible = true;
+        this.scheduleOnce(() => {
+            this.isInvincible = false;
+        }, 2);
+        this.isDeadSequencePlaying = false;
+        this.setColliderEnabled(true);
+        this.gameManager?.setGameplayPaused(false);
+        this.gameManager?.playLevelBgm();
         this.reset();
+    }
+
+    private playPowerTransition(animationName: string, shouldGrow: boolean) {
+        if (this.isDeadSequencePlaying || this.isVictorySequencePlaying || this.isPowerTransitionPlaying) {
+            return;
+        }
+
+        this.isPowerTransitionPlaying = true;
+        this.move_pressed = [false, false];
+        this.gameManager?.setGameplayPaused(true);
+
+        if (shouldGrow) {
+            this.gameManager?.playPowerUpSound?.();
+        } else {
+            this.gameManager?.playPowerDownSound?.();
+        }
+
+        if (this.rb) {
+            this.rb.linearVelocity = cc.v2(0, this.rb.linearVelocity.y);
+        }
+
+        this.forcePlayAnimation(animationName);
+
+        this.scheduleOnce(() => {
+            if (shouldGrow) {
+                this.applyGrowUp();
+            } else {
+                this.applyShrinkDown();
+            }
+
+            this.isPowerTransitionPlaying = false;
+            this.gameManager?.setGameplayPaused(false);
+            this.scheduleOnce(() => {
+                this.isInvincible = false;
+            }, 1.0);
+        }, 2);
+    }
+
+    private playDeathSequence(isGameOver: boolean) {
+        if (!this.rb || this.isDeadSequencePlaying) {
+            return;
+        }
+
+        this.isDeadSequencePlaying = true;
+        this.move_pressed = [false, false];
+        this.landPlayer();
+        this.gameManager?.setGameplayPaused(true);
+        this.gameManager?.playDeathBgm?.();
+        this.setColliderEnabled(false);
+        this.rb.linearVelocity = cc.v2(0, 420);
+        this.rb.angularVelocity = 0;
+        this.forcePlayAnimation("small_die");
+
+        this.scheduleOnce(() => {
+            if (isGameOver) {
+                this.gameManager?.gameOver();
+            } else {
+                this.respawn();
+            }
+        }, 3);
+    }
+
+    playVictorySequence() {
+        if (!this.rb || this.isDeadSequencePlaying || this.isVictorySequencePlaying) {
+            return;
+        }
+
+        this.isVictorySequencePlaying = true;
+        this.isVictoryGrounded = false;
+        this.victoryTransitionScheduled = false;
+        this.move_pressed = [false, false];
+        this.jump_count = 0;
+        this.is_jumping = false;
+        this.gameManager?.setGameplayPaused(true);
+        this.gameManager?.playVictoryBgm?.();
+        this.rb.linearVelocity = cc.v2(0, -this.victorySlideSpeed);
+        this.rb.angularVelocity = 0;
+        this.forcePlayAnimation(this.isGrowup ? "big_win" : "small_win");
     }
 
     private isOutOfBounds(): boolean {
@@ -278,6 +455,43 @@ export default class PlayerControl extends cc.Component {
     private landPlayer() {
         this.jump_count = 0;
         this.is_jumping = false;
+
+        if (this.isVictorySequencePlaying) {
+            this.scheduleVictoryTransitionAfterLanding();
+            return;
+        }
+
+        this.gameManager?.startTimerAfterPlayerGroundContact?.();
+    }
+
+    private scheduleVictoryTransitionAfterLanding() {
+        if (this.victoryTransitionScheduled) {
+            return;
+        }
+
+        this.isVictoryGrounded = true;
+        this.victoryTransitionScheduled = true;
+
+        if (this.rb) {
+            this.rb.linearVelocity = cc.v2(0, 0);
+            this.rb.angularVelocity = 0;
+        }
+
+        this.scheduleOnce(() => {
+            cc.director.loadScene("GameWin");
+        }, 2);
+    }
+
+    private isVictoryGroundContact(self: cc.PhysicsCollider, other: cc.PhysicsCollider): boolean {
+        if (other.tag === EntityTag.QUESTION_BLOCK) {
+            return this.isOnTopOfCollider(self, other);
+        }
+
+        if (!this.isTerrain(other)) {
+            return false;
+        }
+
+        return this.shouldCountAsGroundContact(self, other);
     }
 
     private updateAnimation() {
@@ -318,6 +532,36 @@ export default class PlayerControl extends cc.Component {
 
         this.currentAnim = name;
         this.anim.play(name);
+    }
+
+    private forcePlayAnimation(name: string) {
+        if (!this.anim) {
+            return;
+        }
+
+        if (!this.anim.getAnimationState(name)) {
+            cc.warn(`Player animation clip '${name}' not found`);
+            return;
+        }
+
+        this.currentAnim = name;
+        this.anim.play(name, 0);
+    }
+
+    private playSound(sound: cc.AudioClip | null) {
+        if (!sound) {
+            return;
+        }
+
+        cc.audioEngine.playEffect(sound, false);
+    }
+
+    private setColliderEnabled(enabled: boolean) {
+        const collider = this.getComponent(cc.PhysicsCollider);
+
+        if (collider) {
+            collider.enabled = enabled;
+        }
     }
 
     private isLayeredTerrain(other: cc.PhysicsCollider): boolean {

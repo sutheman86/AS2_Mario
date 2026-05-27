@@ -62,6 +62,27 @@ export default class GameManager extends cc.Component {
     @property(cc.Prefab)
     finishFlagPrefab: cc.Prefab | null = null;
 
+    @property(cc.AudioClip)
+    bgm: cc.AudioClip | null = null;
+
+    @property(cc.AudioClip)
+    victoryBgm: cc.AudioClip | null = null;
+
+    @property(cc.AudioClip)
+    deathBgm: cc.AudioClip | null = null;
+
+    @property(cc.AudioClip)
+    stompSound: cc.AudioClip | null = null;
+
+    @property(cc.AudioClip)
+    questionBlockHitSound: cc.AudioClip | null = null;
+
+    @property(cc.AudioClip)
+    powerUpSound: cc.AudioClip | null = null;
+
+    @property(cc.AudioClip)
+    powerDownSound: cc.AudioClip | null = null;
+
     private playerControl: any = null;
     private enemyInstances: cc.Node[] = [];
     private questionBlockInstances: cc.Node[] = [];
@@ -80,6 +101,8 @@ export default class GameManager extends cc.Component {
     private finishFlag: cc.Node | null = null;
     private remainingTime: number = 0;
     private playerScore: number = 0;
+    private gameplayPaused: boolean = false;
+    private timerStarted: boolean = false;
 
 // NOTE: built-ins
     onLoad () {
@@ -101,12 +124,12 @@ export default class GameManager extends cc.Component {
         this.loadTiledMap();
         this.loadPlayer();
         this.loadEnemyLayer();
+        this.playLevelBgm();
 
         this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateScore(0);
         this.remainingTime = this.maxGameTimeSeconds;
         this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateTime(this.remainingTime);
         this.playerScore = 0;
-        this.schedule(this.timerCountdown, 1);
     }
 
     // NOTE: load / initalize data
@@ -238,6 +261,43 @@ export default class GameManager extends cc.Component {
         this.scheduleOnce(() => {
             this.spawnEnemyFromPoint(spawnId);
         }, spawnPoint.respawnPeriod);
+    }
+
+    isGameplayPaused(): boolean {
+        return this.gameplayPaused;
+    }
+
+    setGameplayPaused(paused: boolean) {
+        if (this.gameplayPaused === paused) {
+            return;
+        }
+
+        this.gameplayPaused = paused;
+
+        if (paused) {
+            this.unschedule(this.timerCountdown);
+        } else if (this.timerStarted) {
+            this.schedule(this.timerCountdown, 1);
+        }
+
+        this.freezeDynamicGameplayNodes();
+    }
+
+    freezeDynamicGameplayNodes() {
+        const nodes = this.enemyInstances.concat(this.mushroomInstances);
+
+        for (const node of nodes) {
+            if (!node || !node.isValid) {
+                continue;
+            }
+
+            const rb = node.getComponent(cc.RigidBody);
+
+            if (rb) {
+                rb.linearVelocity = cc.v2(0, 0);
+                rb.angularVelocity = 0;
+            }
+        }
     }
 
     getEnemyTypeFromObject(obj: any): EnemyTypeName | null {
@@ -775,12 +835,69 @@ export default class GameManager extends cc.Component {
         this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateLives(lives);
     }
 
+    playBgm(clip: cc.AudioClip | null, loop: boolean) {
+        if (!clip) {
+            return;
+        }
+
+        cc.audioEngine.playMusic(clip, loop);
+    }
+
+    playVictoryBgm() {
+        this.playBgm(this.victoryBgm, false);
+    }
+
+    playDeathBgm() {
+        this.playBgm(this.deathBgm, false);
+    }
+
+    playLevelBgm() {
+        this.playBgm(this.bgm, true);
+    }
+
+    playSoundEffect(clip: cc.AudioClip | null) {
+        if (!clip) {
+            return;
+        }
+
+        cc.audioEngine.playEffect(clip, false);
+    }
+
+    playStompSound() {
+        this.playSoundEffect(this.stompSound);
+    }
+
+    playQuestionBlockHitSound() {
+        this.playSoundEffect(this.questionBlockHitSound);
+    }
+
+    playPowerUpSound() {
+        this.playSoundEffect(this.powerUpSound);
+    }
+
+    playPowerDownSound() {
+        this.playSoundEffect(this.powerDownSound);
+    }
+
+    startTimerAfterPlayerGroundContact() {
+        if (this.timerStarted) {
+            return;
+        }
+
+        this.timerStarted = true;
+        this.schedule(this.timerCountdown, 1);
+    }
+
     winGame() {
         cc.log("congratulations! You reached the finish flag and won the game!");
-        cc.director.loadScene("GameWin");
+        this.playerControl?.playVictorySequence();
     }
 
     timerCountdown() {
+        if (this.gameplayPaused) {
+            return;
+        }
+
         this.remainingTime = Math.max(0, this.remainingTime - 1);
         this.uiOverlayNode?.getComponent("GameUIOverlay")?.updateTime(this.remainingTime);
 
@@ -810,6 +927,7 @@ export default class GameManager extends cc.Component {
         cc.log(`Question block hit: ${blockNode.name}`);
         const index = this.questionBlockInstances.indexOf(blockNode);
         if (index >= 0) {
+            this.playQuestionBlockHitSound();
             this.questionBlockInstances.splice(index, 1);
             this.spawnMushroomFromBlock(blockNode);
             blockNode.destroy();

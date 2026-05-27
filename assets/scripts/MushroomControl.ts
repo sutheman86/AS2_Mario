@@ -25,6 +25,10 @@ export default class MushroomControl extends cc.Component {
             return;
         }
 
+        if (this.gameManager?.isGameplayPaused?.()) {
+            return;
+        }
+
         this.rb.linearVelocity = cc.v2(
             this.speed,
             this.rb.linearVelocity.y

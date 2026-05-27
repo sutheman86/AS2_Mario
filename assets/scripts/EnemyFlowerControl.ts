@@ -66,6 +66,10 @@ export default class EnemyFlowerControl extends cc.Component {
 
     update(dt: number) {
         if (!this.rb) return;
+        if (this.gameManager?.isGameplayPaused?.()) {
+            return;
+        }
+
         switch (this.currentState) {
             case FlowerState.GOUP:
                 this.rb.linearVelocity = cc.v2(0, this.speed);

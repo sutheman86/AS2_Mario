@@ -41,6 +41,9 @@ export default class EnemyControl extends cc.Component {
 
     update(dt: number) {
         if (!this.rb) return;
+        if (this.gameManager?.isGameplayPaused?.()) {
+            return;
+        }
 
         this.rb.linearVelocity = cc.v2(
             this.direction * this.speed,
@@ -150,6 +153,7 @@ export default class EnemyControl extends cc.Component {
         if (other.tag === EntityTag.PLAYER) {
             const rb = other.node.getComponent(cc.RigidBody);
             if(this.isOnTopOfCollider(other, self) && !this.isShell) {
+                this.gameManager.playStompSound();
                 this.die(false);
                 this.gameManager.increasePlayerScore(200);
             }

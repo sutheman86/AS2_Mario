@@ -54,7 +54,7 @@
     "_anchorPoint": {
       "__type__": "cc.Vec2",
       "x": 0.5,
-      "y": 0.5
+      "y": 0
     },
     "_trs": {
       "__type__": "TypedArray",
@@ -145,32 +145,6 @@
     "_id": ""
   },
   {
-    "__type__": "cc.PhysicsBoxCollider",
-    "_name": "",
-    "_objFlags": 0,
-    "node": {
-      "__id__": 1
-    },
-    "_enabled": true,
-    "tag": 0,
-    "_density": 1,
-    "_sensor": false,
-    "_friction": 0.2,
-    "_restitution": 0,
-    "body": null,
-    "_offset": {
-      "__type__": "cc.Vec2",
-      "x": 0,
-      "y": 0
-    },
-    "_size": {
-      "__type__": "cc.Size",
-      "width": 16,
-      "height": 16
-    },
-    "_id": ""
-  },
-  {
     "__type__": "40912M0xGhE+4uDEjDq7h6s",
     "_name": "",
     "_objFlags": 0,
@@ -178,6 +152,20 @@
       "__id__": 1
     },
     "_enabled": true,
+    "smallMarioColliderSize": {
+      "__type__": "cc.Size",
+      "width": 16,
+      "height": 16
+    },
+    "bigMarioColliderSize": {
+      "__type__": "cc.Size",
+      "width": 16,
+      "height": 27
+    },
+    "victorySlideSpeed": 60,
+    "jumpSound": {
+      "__uuid__": "077db815-ae56-4dbc-8330-6442f392447e"
+    },
     "_id": ""
   },
   {
@@ -208,16 +196,50 @@
       {
         "__uuid__": "784e8b5e-89e2-4082-a1cc-a7f140fcaf42"
       },
-      null,
-      null,
+      {
+        "__uuid__": "1576cbf5-2776-4d06-81e1-ae803465d947"
+      },
+      {
+        "__uuid__": "fbed0448-6569-4c7a-abfb-bfa9fa66cb0c"
+      },
       {
         "__uuid__": "e9368b61-bda2-4f3f-a0a7-0d6d9d3101f9"
       },
       {
         "__uuid__": "720ef3e6-64b9-4c47-8d4c-6c5ef8eb9bce"
+      },
+      null,
+      {
+        "__uuid__": "f409e439-abf9-4069-b215-47ad8badc29a"
       }
     ],
     "playOnLoad": false,
+    "_id": ""
+  },
+  {
+    "__type__": "cc.PhysicsBoxCollider",
+    "_name": "",
+    "_objFlags": 0,
+    "node": {
+      "__id__": 1
+    },
+    "_enabled": true,
+    "tag": 11,
+    "_density": 1,
+    "_sensor": false,
+    "_friction": 0.2,
+    "_restitution": 0,
+    "body": null,
+    "_offset": {
+      "__type__": "cc.Vec2",
+      "x": 0,
+      "y": 8
+    },
+    "_size": {
+      "__type__": "cc.Size",
+      "width": 16,
+      "height": 16
+    },
     "_id": ""
   },
   {
