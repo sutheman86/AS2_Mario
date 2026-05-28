@@ -755,7 +755,7 @@
       "__id__": 10
     },
     "_enabled": true,
-    "targetScene": "GameStart",
+    "targetScene": "LevelSelect",
     "_id": "9b08a5GWVHkKEu1aXGk1AM"
   },
   {

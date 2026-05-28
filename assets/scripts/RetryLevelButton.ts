@@ -5,10 +5,11 @@
 // Learn life-cycle callbacks:
 //  - https://docs.cocos.com/creator/manual/en/scripting/life-cycle-callbacks.html
 
-const { ccclass } = cc._decorator;
+const {ccclass, property} = cc._decorator;
 
 @ccclass
-export default class GameState extends cc.Component {
-    static selectedLevel: number = 1;
-    static readonly MAXLEVEL: number = 1;
+export default class NewClass extends cc.Component {
+    onPressedCallback() {
+        cc.director.loadScene("Game")
+    }
 }

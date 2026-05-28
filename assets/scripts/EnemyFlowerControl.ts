@@ -53,7 +53,6 @@ export default class EnemyFlowerControl extends cc.Component {
         this.bottomY = this.node.y;
         this.topY = this.bottomY + this.riseHeight;
         this.enterState(FlowerState.IDLE);
-        this.node.zIndex = 1;
     }
 
     onLoad() {
@@ -105,10 +104,18 @@ export default class EnemyFlowerControl extends cc.Component {
                 return;
             }
 
-            this.gameManager.damagePlayer();
+            if(this.isOnTopOfCollider(other, self)) {
+                this.gameManager.damagePlayer();
+            }
             return;
         }
 
+    }
+
+    private isOnTopOfCollider(mario: cc.PhysicsCollider, enemy: cc.PhysicsCollider): boolean {
+        const marioAABB = (mario as any).getAABB();
+        const enemyAABB = (enemy as any).getAABB();
+        return marioAABB.yMax >= enemyAABB.yMax;
     }
 
     onPreSolve(contact: cc.PhysicsContact, self: cc.PhysicsCollider, other: cc.PhysicsCollider) {

@@ -75,7 +75,8 @@ export default class EnemyControl extends cc.Component {
     }
 
     shellKicked(direction: number = 1) {
-        this.speed = direction * 100;
+        this.direction = direction;
+        this.speed = 100;
     }
 
     private playAnimation(name: string) {
@@ -131,16 +132,9 @@ export default class EnemyControl extends cc.Component {
     private decideColliderOrientation(self: cc.PhysicsCollider, other: cc.PhysicsCollider) {
         const myAABB = (self as any).getAABB();
         const marioAABB = (other as any).getAABB();
-        if(myAABB.xMin + 8 > marioAABB.xMax) { // right
-            cc.log("turtle shell kicked right");
-            return 1;
-        }
-        else if(myAABB.xMax - 8 < marioAABB.xMin) { // left
-            cc.log("turtle shell kicked left");
-            return -1;
-        }
-        cc.log("turtle shell not kicked");
-        return 0;
+        const shellCenterX = (myAABB.xMin + myAABB.xMax) / 2;
+        const marioCenterX = (marioAABB.xMin + marioAABB.xMax) / 2;
+        return marioCenterX <= shellCenterX ? 1 : -1;
     }
 
     onBeginContact(contact, self, other) {
@@ -148,7 +142,7 @@ export default class EnemyControl extends cc.Component {
             return;
         }
 
-        if(other.tag === EntityTag.ENEMY) { return; }
+        if(other.tag === EntityTag.ENEMY || other.tag === EntityTag.COIN) { return; }
 
         if (other.tag === EntityTag.PLAYER) {
             const rb = other.node.getComponent(cc.RigidBody);
@@ -159,8 +153,10 @@ export default class EnemyControl extends cc.Component {
             }
             else {
                 if (this.isShell) {
-                    this.shellKicked(
-                        this.decideColliderOrientation(self, other))               
+                    if(!this.isKickedShell()) {
+                        this.shellKicked(
+                            this.decideColliderOrientation(self, other));
+                    }
                 }
                 else {
                     this.gameManager.damagePlayer();
@@ -184,9 +180,18 @@ export default class EnemyControl extends cc.Component {
             return;
         }
 
-        if (other.tag == EntityTag.ENEMY) {
+        if (other.tag == EntityTag.ENEMY || other.tag === EntityTag.COIN) {
+            contact.disabled = true;
+            return;
+        }
+
+        if (other.tag === EntityTag.PLAYER && this.isKickedShell()) {
             contact.disabled = true;
         }
+    }
+
+    private isKickedShell(): boolean {
+        return this.isShell && Math.abs(this.speed) > 0;
     }
 
     private isMapCollider(other: cc.PhysicsCollider): boolean {

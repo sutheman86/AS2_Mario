@@ -7,6 +7,7 @@
 
 const { ccclass, property } = cc._decorator;
 import {EntityTag } from "./EntityTag";
+import GameState from "./GameState";
 
 type EnemyTypeName = "Turtle" | "Goomba" | "Flower";
 
@@ -15,6 +16,7 @@ interface EnemySpawnPoint {
     enemyType: EnemyTypeName;
     x: number;
     y: number;
+    zIndex: number | null;
     respawnPeriod: number;
     activeEnemy: cc.Node | null;
 }
@@ -38,6 +40,12 @@ export default class GameManager extends cc.Component {
     @property(cc.Prefab)
     enemyFlowerPrefab: cc.Prefab | null = null;
 
+    @property([cc.TiledMapAsset])
+    levelMaps: cc.TiledMapAsset[] = [];
+
+    @property
+    currentLevelIndex: number = 0;
+
     @property(cc.TiledMap)
     tileMap0: cc.TiledMap | null = null;
 
@@ -49,6 +57,9 @@ export default class GameManager extends cc.Component {
 
     @property(cc.Prefab)
     questionBlockPrefab: cc.Prefab | null = null;
+
+    @property(cc.Prefab)
+    coinPrefab: cc.Prefab | null = null;
 
     @property(cc.Prefab)
     mushroomPrefab: cc.Prefab | null = null;
@@ -83,6 +94,9 @@ export default class GameManager extends cc.Component {
     @property(cc.AudioClip)
     powerDownSound: cc.AudioClip | null = null;
 
+    @property(cc.AudioClip)
+    coinSound: cc.AudioClip | null = null;
+
     private playerControl: any = null;
     private enemyInstances: cc.Node[] = [];
     private questionBlockInstances: cc.Node[] = [];
@@ -103,6 +117,7 @@ export default class GameManager extends cc.Component {
     private playerScore: number = 0;
     private gameplayPaused: boolean = false;
     private timerStarted: boolean = false;
+    private currentLevelIndex: number = 0;
 
 // NOTE: built-ins
     onLoad () {
@@ -115,12 +130,13 @@ export default class GameManager extends cc.Component {
         physics.gravity = cc.v2(0, this.gravity);
         cc.director.getCollisionManager().enabled = true;
         cc.log(this.tileMap0?.getProperties());
-
         // DEBUG: debug purpose
         // cc.director.getScheduler().setTimeScale(0.3);
     }
 
     start () {
+        this.currentLevelIndex = GameState.selectedLevel;
+        this.loadLevel(this.currentLevelIndex);
         this.loadTiledMap();
         this.loadPlayer();
         this.loadEnemyLayer();
@@ -133,7 +149,29 @@ export default class GameManager extends cc.Component {
     }
 
     // NOTE: load / initalize data
-    loadEnemy(type: string = "Turtle", spawnX: number, spawnY: number, spawnId: number | null = null): cc.Node | null {
+    loadLevel(levelIndex: number) {
+        if(!this.tileMap0) {
+            cc.error("Tilemap not set in GameManager");
+            return;
+        }
+
+        if (!this.levelMaps || this.levelMaps.length === 0) {
+            cc.warn("No level maps assigned. Using TileMap already set in scene.");
+            return;
+        }
+
+        const levelAsset = this.levelMaps[levelIndex];
+
+        if (!levelAsset) {
+            cc.error(`Level map index ${levelIndex} not found`);
+            return;
+        }
+
+        this.tileMap0.tmxAsset = levelAsset;
+        cc.log(`Loaded level map index ${levelIndex}`);
+    }
+
+    loadEnemy(type: string = "Turtle", spawnX: number, spawnY: number, spawnId: number | null = null, zIndex: number | null = null): cc.Node | null {
         const classKey = `Enemy${type}Control`;
 
 
@@ -150,7 +188,7 @@ export default class GameManager extends cc.Component {
         enemyInstance.getComponent(cc.PhysicsBoxCollider).tag = EntityTag.ENEMY; 
         const enemyParent = this.tileMap0 ? this.tileMap0.node : this.worldNode || this.node;
         enemyParent.addChild(enemyInstance);
-        enemyInstance.zIndex = this.getEnemyZIndex(type);
+        enemyInstance.zIndex = zIndex !== null ? zIndex : this.getEnemyZIndex(type);
         enemyInstance.setPosition(spawnX!, spawnY!, 0);
         let enemyControl: any = enemyInstance.getComponent(classKey);
 
@@ -161,6 +199,7 @@ export default class GameManager extends cc.Component {
 
         enemyControl.initialize(this, spawnId);
         this.enemyInstances.push(enemyInstance);
+        cc.log(`Enemy initialized: ${type} zIndex=${enemyInstance.zIndex}`)
         return enemyInstance;
     }
 
@@ -212,6 +251,7 @@ export default class GameManager extends cc.Component {
             enemyType,
             x: obj.x + obj.width / 2,
             y: obj.y - obj.height / 2,
+            zIndex: this.getObjectNumberProperty(obj, "zindex"),
             respawnPeriod: this.getEnemyRespawnPeriod(enemyType, goombaRespawnPeriod, turtleRespawnPeriod),
             activeEnemy: null,
         };
@@ -231,8 +271,20 @@ export default class GameManager extends cc.Component {
             spawnPoint.enemyType,
             spawnPoint.x,
             spawnPoint.y,
-            spawnPoint.id
+            spawnPoint.id,
+            spawnPoint.zIndex
         );
+    }
+
+    getObjectNumberProperty(obj: any, propertyName: string): number | null {
+        const value = obj[propertyName];
+
+        if (value === null || value === undefined || value === "") {
+            return null;
+        }
+
+        const numberValue = Number(value);
+        return isNaN(numberValue) ? null : numberValue;
     }
 
     enemyKilled(spawnId: number | null, enemyNode: cc.Node) {
@@ -433,6 +485,8 @@ export default class GameManager extends cc.Component {
             cc.log(`Found block object: ${obj.name || obj.id}`);
             const blockNode = cc.instantiate(this.questionBlockPrefab!);
             blockNode.setParent(this.tileMap0!.node);
+            this.playNodeAnimation(blockNode, "question_block");
+            blockNode.zIndex = 99;
             blockNode.setPosition(
                 obj.x + obj.width / 2,
                 obj.y - obj.height / 2,
@@ -440,6 +494,18 @@ export default class GameManager extends cc.Component {
             );
 
             this.questionBlockInstances.push(blockNode);
+            return;
+        }
+        else if(obj.kind === "coin") {
+            const blockNode = cc.instantiate(this.coinPrefab!);
+            blockNode.setParent(this.tileMap0!.node);
+            blockNode.zIndex = 99;
+            blockNode.setPosition(
+                obj.x + obj.width / 2,
+                obj.y - obj.height / 2,
+                0
+            );
+            blockNode.getComponent("CoinControl").initialize(this);
             return;
         }
 
@@ -653,6 +719,26 @@ export default class GameManager extends cc.Component {
         }
 
         return Math.abs(surfaceY - targetSurfaceY) <= 8;
+    }
+
+    shouldCountPlayerGroundContact(playerCollider: cc.PhysicsCollider, terrainCollider: cc.PhysicsCollider): boolean {
+        if (!this.tileMap0 || !playerCollider || !terrainCollider) {
+            return false;
+        }
+
+        const playerAabb = (playerCollider as any).getAABB();
+        const playerBottomLeftMap = this.tileMap0.node.convertToNodeSpaceAR(cc.v2(playerAabb.xMin, playerAabb.yMin));
+        const playerBottomRightMap = this.tileMap0.node.convertToNodeSpaceAR(cc.v2(playerAabb.xMax, playerAabb.yMin));
+        const playerLeftMapX = Math.min(playerBottomLeftMap.x, playerBottomRightMap.x);
+        const playerRightMapX = Math.max(playerBottomLeftMap.x, playerBottomRightMap.x);
+        const playerBottomMapY = Math.min(playerBottomLeftMap.y, playerBottomRightMap.y);
+        const surfaceY = this.getColliderSurfaceYInXRange(terrainCollider, playerLeftMapX, playerRightMapX);
+
+        if (surfaceY === null) {
+            return false;
+        }
+
+        return Math.abs(playerBottomMapY - surfaceY) <= 10;
     }
 
     // NOTE: getter
@@ -871,6 +957,10 @@ export default class GameManager extends cc.Component {
         this.playSoundEffect(this.questionBlockHitSound);
     }
 
+    playCoinSound() {
+        this.playSoundEffect(this.coinSound);
+    }
+
     playPowerUpSound() {
         this.playSoundEffect(this.powerUpSound);
     }
@@ -930,10 +1020,26 @@ export default class GameManager extends cc.Component {
             this.playQuestionBlockHitSound();
             this.questionBlockInstances.splice(index, 1);
             this.spawnMushroomFromBlock(blockNode);
-            blockNode.destroy();
+            this.playNodeAnimation(blockNode, "question_block_disabled");
         } else {
             cc.warn("Hit question block that is not tracked in GameManager");
         }
+    }
+
+    playNodeAnimation(node: cc.Node, clipName: string) {
+        const anim = node.getComponent(cc.Animation);
+
+        if (!anim) {
+            cc.warn(`Node '${node.name}' is missing Animation component`);
+            return;
+        }
+
+        if (!anim.getAnimationState(clipName)) {
+            cc.warn(`Animation clip '${clipName}' not found on '${node.name}'`);
+            return;
+        }
+
+        anim.play(clipName);
     }
 
     // NOTE: debug utility

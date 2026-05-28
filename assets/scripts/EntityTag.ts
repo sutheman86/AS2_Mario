@@ -5,4 +5,5 @@ export class EntityTag {
     static readonly QUESTION_BLOCK = 4;
     static readonly FINISH = 99;
     static readonly GROUND = 1;
+    static readonly COIN = 42;
 }

@@ -81,10 +81,10 @@
     "_active": true,
     "_components": [
       {
-        "__id__": 55
+        "__id__": 56
       },
       {
-        "__id__": 56
+        "__id__": 57
       }
     ],
     "_prefab": null,
@@ -147,6 +147,9 @@
     "_components": [
       {
         "__id__": 4
+      },
+      {
+        "__id__": 55
       }
     ],
     "_prefab": null,
@@ -218,6 +221,15 @@
     "enemyFlowerPrefab": {
       "__uuid__": "5ea41818-619d-433a-8c3a-b4d439511fae"
     },
+    "levelMaps": [
+      {
+        "__uuid__": "387670ba-f11b-464d-bb46-c7ca8de49f88"
+      },
+      {
+        "__uuid__": "4b97cc09-38c4-46c4-8152-9c2c5e356ad9"
+      }
+    ],
+    "currentLevelIndex": 0,
     "tileMap0": {
       "__id__": 5
     },
@@ -227,6 +239,9 @@
     "playerMaxLives": 3,
     "questionBlockPrefab": {
       "__uuid__": "b9de657e-2de0-492e-8586-7879208169ce"
+    },
+    "coinPrefab": {
+      "__uuid__": "b9a01e28-4e2c-4ee0-abd3-1736a85209c1"
     },
     "mushroomPrefab": {
       "__uuid__": "bff90aa8-1982-45af-92d4-ddac6ec0a69d"
@@ -258,6 +273,9 @@
     },
     "powerDownSound": {
       "__uuid__": "9e0f9cba-92eb-4d25-aea2-0b975927981a"
+    },
+    "coinSound": {
+      "__uuid__": "76fa495f-d235-40f5-9bf4-84ae553121d1"
     },
     "_id": "24NykZSqhJGLx6qgXD7byv"
   },
@@ -2258,6 +2276,16 @@
       "__id__": 37
     },
     "_id": "f0kEMGpSJDhZfek78G2GW/"
+  },
+  {
+    "__type__": "cf91b2vcdRLEr+Fyk5esoyw",
+    "_name": "",
+    "_objFlags": 0,
+    "node": {
+      "__id__": 3
+    },
+    "_enabled": true,
+    "_id": "57fRAXb9JBRqI6X4jKgoeA"
   },
   {
     "__type__": "cc.Canvas",

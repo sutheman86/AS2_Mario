@@ -82,9 +82,6 @@ export default class PlayerControl extends cc.Component {
     }
 
     onKeyDown (event: cc.Event.EventKeyboard) {
-        if (this.isDeadSequencePlaying || this.isVictorySequencePlaying || this.isPowerTransitionPlaying || this.gameManager?.isGameplayPaused?.()) {
-            return;
-        }
 
         switch(event.keyCode) {
             case cc.macro.KEY.a:
@@ -103,9 +100,6 @@ export default class PlayerControl extends cc.Component {
     }
 
     onKeyUp (event: cc.Event.EventKeyboard) {
-        if (this.isDeadSequencePlaying || this.isVictorySequencePlaying || this.isPowerTransitionPlaying || this.gameManager?.isGameplayPaused?.()) {
-            return;
-        }
 
         switch(event.keyCode) {
             case cc.macro.KEY.left:
@@ -581,8 +575,8 @@ export default class PlayerControl extends cc.Component {
     }
 
     private shouldCountAsGroundContact(self: cc.PhysicsCollider, other: cc.PhysicsCollider): boolean {
-        if (this.isLayeredTerrain(other)) {
-            return this.shouldCollideWithTerrain(self, other);
+        if (this.isTerrain(other)) {
+            return this.gameManager?.shouldCountPlayerGroundContact?.(self, other) || false;
         }
 
         return this.isOnTopOfCollider(self, other);

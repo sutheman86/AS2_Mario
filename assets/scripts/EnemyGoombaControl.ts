@@ -133,8 +133,6 @@ export default class EnemyGoombaControl extends cc.Component {
     private isOnTopOfCollider(mario: cc.PhysicsCollider, enemy: cc.PhysicsCollider): boolean {
         const marioAABB = (mario as any).getAABB();
         const enemyAABB = (enemy as any).getAABB();
-
-        cc.log(marioAABB, enemyAABB);
         return marioAABB.yMin >= enemyAABB.yMax - 12;
     }
 
@@ -158,7 +156,7 @@ export default class EnemyGoombaControl extends cc.Component {
             return;
         }
 
-        if(other.tag === EntityTag.ENEMY) { return; }
+        if(other.tag === EntityTag.ENEMY || other.tag === EntityTag.COIN) { return; }
 
         if (other.tag === EntityTag.PLAYER) {
             const rb = other.node.getComponent(cc.RigidBody);
@@ -187,7 +185,7 @@ export default class EnemyGoombaControl extends cc.Component {
             return;
         }
 
-        if (other.tag == EntityTag.ENEMY) {
+        if (other.tag == EntityTag.ENEMY || other.tag === EntityTag.COIN) {
             contact.disabled = true;
         }
     }
